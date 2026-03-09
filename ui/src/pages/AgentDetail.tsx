@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link, useBeforeUnload } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { agentsApi, type AgentKey, type ClaudeLoginResult } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
+import { recordsApi } from "../api/records";
 import { ApiError } from "../api/client";
 import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
 import { activityApi } from "../api/activity";
@@ -1433,6 +1434,19 @@ function RunDetail({ run, agentRouteId, adapterType }: { run: HeartbeatRun; agen
     },
   });
 
+  const promoteRunToResult = useMutation({
+    mutationFn: () =>
+      recordsApi.promoteToResult(run.companyId, {
+        sourceType: "heartbeat_run",
+        sourceId: run.id,
+        kind: "status_report",
+      }),
+    onSuccess: async (record) => {
+      await queryClient.invalidateQueries({ queryKey: ["records", run.companyId] });
+      navigate(`/briefings/records/${record.id}`);
+    },
+  });
+
   const { data: touchedIssues } = useQuery({
     queryKey: queryKeys.runIssues(run.id),
     queryFn: () => activityApi.issuesForRun(run.id),
@@ -1535,6 +1549,15 @@ function RunDetail({ run, agentRouteId, adapterType }: { run: HeartbeatRun; agen
                   {retryRun.isPending ? "Retrying…" : "Retry"}
                 </Button>
               )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs h-6 px-2"
+                onClick={() => promoteRunToResult.mutate()}
+                disabled={promoteRunToResult.isPending}
+              >
+                {promoteRunToResult.isPending ? "Promoting…" : "Promote to result"}
+              </Button>
             </div>
             {resumeRun.isError && (
               <div className="text-xs text-destructive">
@@ -1544,6 +1567,11 @@ function RunDetail({ run, agentRouteId, adapterType }: { run: HeartbeatRun; agen
             {retryRun.isError && (
               <div className="text-xs text-destructive">
                 {retryRun.error instanceof Error ? retryRun.error.message : "Failed to retry run"}
+              </div>
+            )}
+            {promoteRunToResult.isError && (
+              <div className="text-xs text-destructive">
+                {promoteRunToResult.error instanceof Error ? promoteRunToResult.error.message : "Failed to promote run"}
               </div>
             )}
             {startTime && (

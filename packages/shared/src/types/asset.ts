@@ -1,4 +1,4 @@
-export interface AssetImage {
+export interface AssetFile {
   assetId: string;
   companyId: string;
   provider: string;
@@ -14,3 +14,4 @@ export interface AssetImage {
   contentPath: string;
 }
 
+export type AssetImage = AssetFile;

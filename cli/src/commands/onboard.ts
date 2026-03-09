@@ -60,6 +60,7 @@ const ONBOARD_ENV_KEYS = [
   "PAPERCLIP_ALLOWED_HOSTNAMES",
   "PAPERCLIP_AUTH_BASE_URL_MODE",
   "PAPERCLIP_AUTH_PUBLIC_BASE_URL",
+  "PAPERCLIP_DISABLE_SIGN_UP",
   "BETTER_AUTH_URL",
   "BETTER_AUTH_BASE_URL",
   "PAPERCLIP_STORAGE_PROVIDER",
@@ -185,6 +186,7 @@ function quickstartDefaultsFromEnv(): {
     },
     auth: {
       baseUrlMode: authBaseUrlMode,
+      disableSignUp: parseBooleanFromEnv(process.env.PAPERCLIP_DISABLE_SIGN_UP) ?? false,
       ...(authPublicBaseUrl ? { publicBaseUrl: authPublicBaseUrl } : {}),
     },
     storage: {

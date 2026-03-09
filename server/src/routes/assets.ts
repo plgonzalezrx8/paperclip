@@ -1,12 +1,13 @@
 import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import type { Db } from "@paperclipai/db";
-import { createAssetImageMetadataSchema } from "@paperclipai/shared";
+import { createAssetFileMetadataSchema, createAssetImageMetadataSchema } from "@paperclipai/shared";
 import type { StorageService } from "../storage/types.js";
 import { assetService, logActivity } from "../services/index.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 const MAX_ASSET_IMAGE_BYTES = Number(process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES) || 10 * 1024 * 1024;
+const MAX_ASSET_FILE_BYTES = Number(process.env.PAPERCLIP_ASSET_MAX_BYTES) || 25 * 1024 * 1024;
 const ALLOWED_IMAGE_CONTENT_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -18,12 +19,16 @@ const ALLOWED_IMAGE_CONTENT_TYPES = new Set([
 export function assetRoutes(db: Db, storage: StorageService) {
   const router = Router();
   const svc = assetService(db);
-  const upload = multer({
+  const imageUpload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: MAX_ASSET_IMAGE_BYTES, files: 1 },
   });
+  const fileUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: MAX_ASSET_FILE_BYTES, files: 1 },
+  });
 
-  async function runSingleFileUpload(req: Request, res: Response) {
+  async function runSingleFileUpload(req: Request, res: Response, upload: multer.Multer) {
     await new Promise<void>((resolve, reject) => {
       upload.single("file")(req, res, (err: unknown) => {
         if (err) reject(err);
@@ -32,20 +37,49 @@ export function assetRoutes(db: Db, storage: StorageService) {
     });
   }
 
-  router.post("/companies/:companyId/assets/images", async (req, res) => {
+  function toAssetResponse(asset: Awaited<ReturnType<typeof svc.create>>) {
+    return {
+      assetId: asset.id,
+      companyId: asset.companyId,
+      provider: asset.provider,
+      objectKey: asset.objectKey,
+      contentType: asset.contentType,
+      byteSize: asset.byteSize,
+      sha256: asset.sha256,
+      originalFilename: asset.originalFilename,
+      createdByAgentId: asset.createdByAgentId,
+      createdByUserId: asset.createdByUserId,
+      createdAt: asset.createdAt,
+      updatedAt: asset.updatedAt,
+      contentPath: `/api/assets/${asset.id}/content`,
+    };
+  }
+
+  async function storeUploadedAsset(
+    req: Request,
+    res: Response,
+    opts: {
+      upload: multer.Multer;
+      maxBytes: number;
+      routeLabel: "image" | "file";
+      metadataSchema: typeof createAssetImageMetadataSchema | typeof createAssetFileMetadataSchema;
+      namespaceFallback: string;
+      validateContentType?: (contentType: string) => string | null;
+    },
+  ) {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
 
     try {
-      await runSingleFileUpload(req, res);
+      await runSingleFileUpload(req, res, opts.upload);
     } catch (err) {
       if (err instanceof multer.MulterError) {
         if (err.code === "LIMIT_FILE_SIZE") {
-          res.status(422).json({ error: `Image exceeds ${MAX_ASSET_IMAGE_BYTES} bytes` });
-          return;
+          res.status(422).json({ error: `${opts.routeLabel === "image" ? "Image" : "File"} exceeds ${opts.maxBytes} bytes` });
+          return null;
         }
         res.status(400).json({ error: err.message });
-        return;
+        return null;
       }
       throw err;
     }
@@ -53,32 +87,36 @@ export function assetRoutes(db: Db, storage: StorageService) {
     const file = (req as Request & { file?: { mimetype: string; buffer: Buffer; originalname: string } }).file;
     if (!file) {
       res.status(400).json({ error: "Missing file field 'file'" });
-      return;
+      return null;
     }
 
     const contentType = (file.mimetype || "").toLowerCase();
-    if (!ALLOWED_IMAGE_CONTENT_TYPES.has(contentType)) {
-      res.status(422).json({ error: `Unsupported image type: ${contentType || "unknown"}` });
-      return;
-    }
     if (file.buffer.length <= 0) {
-      res.status(422).json({ error: "Image is empty" });
-      return;
+      res.status(422).json({ error: `${opts.routeLabel === "image" ? "Image" : "File"} is empty` });
+      return null;
+    }
+    const validationError = opts.validateContentType?.(contentType) ?? null;
+    if (validationError) {
+      res.status(422).json({ error: validationError });
+      return null;
     }
 
-    const parsedMeta = createAssetImageMetadataSchema.safeParse(req.body ?? {});
+    const parsedMeta = opts.metadataSchema.safeParse(req.body ?? {});
     if (!parsedMeta.success) {
-      res.status(400).json({ error: "Invalid image metadata", details: parsedMeta.error.issues });
-      return;
+      res.status(400).json({
+        error: `Invalid ${opts.routeLabel} metadata`,
+        details: parsedMeta.error.issues,
+      });
+      return null;
     }
 
-    const namespaceSuffix = parsedMeta.data.namespace ?? "general";
+    const namespaceSuffix = parsedMeta.data.namespace ?? opts.namespaceFallback;
     const actor = getActorInfo(req);
     const stored = await storage.putFile({
       companyId,
       namespace: `assets/${namespaceSuffix}`,
       originalFilename: file.originalname || null,
-      contentType,
+      contentType: contentType || "application/octet-stream",
       body: file.buffer,
     });
 
@@ -109,21 +147,35 @@ export function assetRoutes(db: Db, storage: StorageService) {
       },
     });
 
-    res.status(201).json({
-      assetId: asset.id,
-      companyId: asset.companyId,
-      provider: asset.provider,
-      objectKey: asset.objectKey,
-      contentType: asset.contentType,
-      byteSize: asset.byteSize,
-      sha256: asset.sha256,
-      originalFilename: asset.originalFilename,
-      createdByAgentId: asset.createdByAgentId,
-      createdByUserId: asset.createdByUserId,
-      createdAt: asset.createdAt,
-      updatedAt: asset.updatedAt,
-      contentPath: `/api/assets/${asset.id}/content`,
+    return asset;
+  }
+
+  router.post("/companies/:companyId/assets/images", async (req, res) => {
+    const asset = await storeUploadedAsset(req, res, {
+      upload: imageUpload,
+      maxBytes: MAX_ASSET_IMAGE_BYTES,
+      routeLabel: "image",
+      metadataSchema: createAssetImageMetadataSchema,
+      namespaceFallback: "general",
+      validateContentType: (contentType) =>
+        ALLOWED_IMAGE_CONTENT_TYPES.has(contentType)
+          ? null
+          : `Unsupported image type: ${contentType || "unknown"}`,
     });
+    if (!asset) return;
+    res.status(201).json(toAssetResponse(asset));
+  });
+
+  router.post("/companies/:companyId/assets/files", async (req, res) => {
+    const asset = await storeUploadedAsset(req, res, {
+      upload: fileUpload,
+      maxBytes: MAX_ASSET_FILE_BYTES,
+      routeLabel: "file",
+      metadataSchema: createAssetFileMetadataSchema,
+      namespaceFallback: "records",
+    });
+    if (!asset) return;
+    res.status(201).json(toAssetResponse(asset));
   });
 
   router.get("/assets/:assetId/content", async (req, res, next) => {
@@ -150,4 +202,3 @@ export function assetRoutes(db: Db, storage: StorageService) {
 
   return router;
 }
-

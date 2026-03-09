@@ -10,5 +10,6 @@ export { costRoutes } from "./costs.js";
 export { activityRoutes } from "./activity.js";
 export { dashboardRoutes } from "./dashboard.js";
 export { sidebarBadgeRoutes } from "./sidebar-badges.js";
+export { recordRoutes } from "./records.js";
 export { llmRoutes } from "./llms.js";
 export { accessRoutes } from "./access.js";

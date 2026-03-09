@@ -9,7 +9,7 @@ export type {
   AdapterEnvironmentCheck,
   AdapterEnvironmentTestResult,
 } from "./agent.js";
-export type { AssetImage } from "./asset.js";
+export type { AssetFile, AssetImage } from "./asset.js";
 export type { Project, ProjectGoalRef, ProjectWorkspace } from "./project.js";
 export type {
   Issue,
@@ -23,6 +23,18 @@ export type {
 } from "./issue.js";
 export type { Goal } from "./goal.js";
 export type { Approval, ApprovalComment } from "./approval.js";
+export type {
+  BaseRecord,
+  PlanRecord,
+  ResultRecord,
+  BriefingRecord,
+  AnyRecord,
+  RecordLink,
+  RecordAttachment,
+  ExecutiveProjectHealth,
+  ExecutiveCostAnomaly,
+  ExecutiveBoardSummary,
+} from "./record.js";
 export type {
   SecretProvider,
   SecretVersionSelector,

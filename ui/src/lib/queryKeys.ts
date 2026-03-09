@@ -48,6 +48,18 @@ export const queryKeys = {
     comments: (approvalId: string) => ["approvals", "comments", approvalId] as const,
     issues: (approvalId: string) => ["approvals", "issues", approvalId] as const,
   },
+  records: {
+    plans: (companyId: string, filters?: Record<string, string | undefined>) =>
+      ["records", companyId, "plans", filters ?? {}] as const,
+    results: (companyId: string, filters?: Record<string, string | undefined>) =>
+      ["records", companyId, "results", filters ?? {}] as const,
+    briefings: (companyId: string, filters?: Record<string, string | undefined>) =>
+      ["records", companyId, "briefings", filters ?? {}] as const,
+    board: (companyId: string, scopeType: string, scopeId: string, since: string) =>
+      ["records", companyId, "board", scopeType, scopeId, since] as const,
+    detail: (recordId: string) => ["records", "detail", recordId] as const,
+    activity: (companyId: string, recordId: string) => ["records", "activity", companyId, recordId] as const,
+  },
   access: {
     joinRequests: (companyId: string, status: string = "pending_approval") =>
       ["access", "join-requests", companyId, status] as const,

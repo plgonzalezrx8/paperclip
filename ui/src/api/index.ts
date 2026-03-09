@@ -12,4 +12,5 @@ export { costsApi } from "./costs";
 export { activityApi } from "./activity";
 export { dashboardApi } from "./dashboard";
 export { heartbeatsApi } from "./heartbeats";
+export { recordsApi } from "./records";
 export { sidebarBadgesApi } from "./sidebarBadges";

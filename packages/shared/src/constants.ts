@@ -149,6 +149,67 @@ export const PROJECT_COLORS = [
   "#3b82f6", // blue
 ] as const;
 
+export const RECORD_CATEGORIES = ["plan", "result", "briefing"] as const;
+export type RecordCategory = (typeof RECORD_CATEGORIES)[number];
+
+export const RECORD_SCOPE_TYPES = ["company", "project", "agent"] as const;
+export type RecordScopeType = (typeof RECORD_SCOPE_TYPES)[number];
+
+export const RECORD_STATUSES = ["draft", "active", "published", "archived"] as const;
+export type RecordStatus = (typeof RECORD_STATUSES)[number];
+
+export const PLAN_RECORD_KINDS = [
+  "strategy_memo",
+  "project_brief",
+  "decision_record",
+  "operating_plan",
+  "weekly_objective",
+  "risk_register",
+] as const;
+export type PlanRecordKind = (typeof PLAN_RECORD_KINDS)[number];
+
+export const RESULT_RECORD_KINDS = [
+  "deliverable",
+  "finding",
+  "blocker",
+  "decision_outcome",
+  "status_report",
+] as const;
+export type ResultRecordKind = (typeof RESULT_RECORD_KINDS)[number];
+
+export const BRIEFING_RECORD_KINDS = [
+  "daily_briefing",
+  "weekly_briefing",
+  "executive_rollup",
+  "project_status_report",
+  "incident_summary",
+  "board_packet",
+] as const;
+export type BriefingRecordKind = (typeof BRIEFING_RECORD_KINDS)[number];
+
+export const RECORD_LINK_TARGET_TYPES = [
+  "issue",
+  "heartbeat_run",
+  "project",
+  "goal",
+  "approval",
+  "agent",
+  "record",
+] as const;
+export type RecordLinkTargetType = (typeof RECORD_LINK_TARGET_TYPES)[number];
+
+export const RECORD_LINK_RELATIONS = ["source", "related", "rollup", "decision"] as const;
+export type RecordLinkRelation = (typeof RECORD_LINK_RELATIONS)[number];
+
+export const HEALTH_STATUSES = ["green", "yellow", "red", "unknown"] as const;
+export type HealthStatus = (typeof HEALTH_STATUSES)[number];
+
+export const HEALTH_DELTAS = ["up", "flat", "down", "unknown"] as const;
+export type HealthDelta = (typeof HEALTH_DELTAS)[number];
+
+export const PRICING_STATES = ["exact", "estimated", "unpriced"] as const;
+export type PricingState = (typeof PRICING_STATES)[number];
+
 export const APPROVAL_TYPES = ["hire_agent", "approve_ceo_strategy"] as const;
 export type ApprovalType = (typeof APPROVAL_TYPES)[number];
 

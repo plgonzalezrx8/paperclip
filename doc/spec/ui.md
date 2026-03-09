@@ -141,6 +141,7 @@ Section header: **Company** (collapsible)
 ```
   Company                  ▼
     Dashboard
+    Briefings
     Org Chart
     Agents
     Costs
@@ -148,6 +149,7 @@ Section header: **Company** (collapsible)
 ```
 
 - **Dashboard** — company health overview: agent statuses, task velocity, cost burn, pending approvals count.
+- **Briefings** — executive board, durable results library, planning library, and shared record detail pages.
 - **Org Chart** — interactive tree visualization of the agent reporting hierarchy.
 - **Agents** — flat list of all agents with status, role, last heartbeat, spend.
 - **Costs** — cost dashboard with breakdowns by agent, project, model, time.
@@ -177,6 +179,7 @@ Each nav item has a distinctive icon (lucide-react):
 | Goals | `Target` |
 | Views | `LayoutList` |
 | Dashboard | `LayoutDashboard` |
+| Briefings | `FileText` |
 | Org Chart | `GitBranch` |
 | Agents | `Bot` |
 | Costs | `DollarSign` |
@@ -539,6 +542,8 @@ Three-pane layout. Middle pane shows title, description, child goals, and linked
 ## 8. Dashboard
 
 The dashboard is the company health overview. Shown when clicking "Dashboard" in the Company section.
+It stays intentionally narrow: telemetry, counts, spend, approvals, and stale-task surfacing.
+Executive interpretation, durable outputs, and decision summaries belong in the separate **Briefings** surface.
 
 ### 8.1 Layout
 
@@ -941,6 +946,11 @@ All routes are company-scoped after company selection (company context stored in
 ```
 /                           → redirects to /dashboard
 /dashboard                  → company dashboard
+/briefings                  → redirects to /briefings/board
+/briefings/board            → executive board
+/briefings/results          → durable results library
+/briefings/plans            → durable planning library
+/briefings/records/:recordId → plan/result/briefing detail
 /inbox                      → inbox / attention items
 /my-issues                  → board operator's issues
 /issues                     → issue list

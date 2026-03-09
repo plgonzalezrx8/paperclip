@@ -114,8 +114,44 @@ export {
 
 export {
   createAssetImageMetadataSchema,
+  createAssetFileMetadataSchema,
   type CreateAssetImageMetadata,
+  type CreateAssetFileMetadata,
 } from "./asset.js";
+
+export {
+  recordCategorySchema,
+  recordScopeTypeSchema,
+  recordStatusSchema,
+  planRecordKindSchema,
+  resultRecordKindSchema,
+  briefingRecordKindSchema,
+  healthStatusSchema,
+  healthDeltaSchema,
+  pricingStateSchema,
+  recordLinkTargetTypeSchema,
+  recordLinkRelationSchema,
+  createPlanRecordSchema,
+  createResultRecordSchema,
+  createBriefingRecordSchema,
+  updateRecordSchema,
+  createRecordLinkSchema,
+  createRecordAttachmentSchema,
+  generateRecordSchema,
+  publishRecordSchema,
+  boardSummaryQuerySchema,
+  promoteToResultSchema,
+  type CreatePlanRecord,
+  type CreateResultRecord,
+  type CreateBriefingRecord,
+  type UpdateRecord,
+  type CreateRecordLink,
+  type CreateRecordAttachment,
+  type GenerateRecord,
+  type PublishRecord,
+  type BoardSummaryQuery,
+  type PromoteToResult,
+} from "./record.js";
 
 export {
   createCompanyInviteSchema,

@@ -7,6 +7,7 @@ import { heartbeatsApi } from "../api/heartbeats";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { projectsApi } from "../api/projects";
+import { recordsApi } from "../api/records";
 import { useCompany } from "../context/CompanyContext";
 import { usePanel } from "../context/PanelContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -464,6 +465,22 @@ export function IssueDetail() {
     },
   });
 
+  const promoteToResult = useMutation({
+    mutationFn: () => {
+      if (!issue) throw new Error("Issue not loaded");
+      return recordsApi.promoteToResult(issue.companyId, {
+        sourceType: "issue",
+        sourceId: issue.id,
+        kind: "status_report",
+      });
+    },
+    onSuccess: async (record) => {
+      if (!issue) return;
+      await queryClient.invalidateQueries({ queryKey: ["records", issue.companyId] });
+      navigate(`/briefings/records/${record.id}`);
+    },
+  });
+
   useEffect(() => {
     const titleLabel = issue?.title ?? issueId ?? "Issue";
     setBreadcrumbs([
@@ -601,6 +618,16 @@ export function IssueDetail() {
           )}
 
           <Button
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => promoteToResult.mutate()}
+            disabled={promoteToResult.isPending}
+          >
+            {promoteToResult.isPending ? "Promoting..." : "Promote to result"}
+          </Button>
+
+          <Button
             variant="ghost"
             size="icon-xs"
             className="ml-auto md:hidden shrink-0"
@@ -669,6 +696,12 @@ export function IssueDetail() {
             return attachment.contentPath;
           }}
         />
+
+        {promoteToResult.isError ? (
+          <p className="text-xs text-destructive">
+            {promoteToResult.error instanceof Error ? promoteToResult.error.message : "Failed to promote issue"}
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-3">

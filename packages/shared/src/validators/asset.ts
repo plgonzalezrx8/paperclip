@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const createAssetImageMetadataSchema = z.object({
+const assetMetadataSchema = z.object({
   namespace: z
     .string()
     .trim()
@@ -10,5 +10,8 @@ export const createAssetImageMetadataSchema = z.object({
     .optional(),
 });
 
+export const createAssetImageMetadataSchema = assetMetadataSchema;
 export type CreateAssetImageMetadata = z.infer<typeof createAssetImageMetadataSchema>;
 
+export const createAssetFileMetadataSchema = assetMetadataSchema;
+export type CreateAssetFileMetadata = z.infer<typeof createAssetFileMetadataSchema>;

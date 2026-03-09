@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { approvalsApi } from "../api/approvals";
 import { agentsApi } from "../api/agents";
+import { recordsApi } from "../api/records";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -129,6 +130,25 @@ export function ApprovalDetail() {
       refresh();
     },
     onError: (err) => setError(err instanceof Error ? err.message : "Comment failed"),
+  });
+
+  const promoteToResultMutation = useMutation({
+    mutationFn: () => {
+      const companyId = approval?.companyId ?? resolvedCompanyId;
+      if (!companyId || !approvalId) throw new Error("Approval context is not loaded");
+      return recordsApi.promoteToResult(companyId, {
+        sourceType: "approval",
+        sourceId: approvalId,
+        kind: "decision_outcome",
+      });
+    },
+    onSuccess: async (record) => {
+      if (approval?.companyId) {
+        await queryClient.invalidateQueries({ queryKey: ["records", approval.companyId] });
+      }
+      navigate(`/briefings/records/${record.id}`);
+    },
+    onError: (err) => setError(err instanceof Error ? err.message : "Promotion failed"),
   });
 
   const deleteAgentMutation = useMutation({
@@ -260,6 +280,14 @@ export function ApprovalDetail() {
           </div>
         )}
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => promoteToResultMutation.mutate()}
+            disabled={promoteToResultMutation.isPending}
+          >
+            {promoteToResultMutation.isPending ? "Promoting..." : "Promote to result"}
+          </Button>
           {isActionable && (
             <>
               <Button

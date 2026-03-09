@@ -33,6 +33,13 @@ const ACTION_VERBS: Record<string, string> = {
   "goal.created": "created",
   "goal.updated": "updated",
   "goal.deleted": "deleted",
+  "record.created": "created",
+  "record.updated": "updated",
+  "record.generated": "generated",
+  "record.published": "published",
+  "record.promoted_to_result": "promoted",
+  "record.link_added": "linked",
+  "record.attachment_added": "attached file to",
   "cost.reported": "reported cost for",
   "cost.recorded": "recorded cost for",
   "company.created": "created company",
@@ -72,6 +79,7 @@ function entityLink(entityType: string, entityId: string, name?: string | null):
     case "project": return `/projects/${deriveProjectUrlKey(name, entityId)}`;
     case "goal": return `/goals/${entityId}`;
     case "approval": return `/approvals/${entityId}`;
+    case "record": return `/briefings/records/${entityId}`;
     default: return null;
   }
 }

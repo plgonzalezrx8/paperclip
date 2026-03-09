@@ -504,6 +504,57 @@ Dashboard payload must include:
 - pending approvals count
 - stale task count
 
+The dashboard remains the narrow operational telemetry surface.
+Executive summaries, durable outputs, and decision-oriented rollups live under the separate briefing layer.
+
+## 10.8A Executive Briefings, Results, and Plans
+
+- `GET /companies/:companyId/plans`
+- `POST /companies/:companyId/plans`
+- `GET /companies/:companyId/results`
+- `POST /companies/:companyId/results`
+- `POST /companies/:companyId/results/promote`
+- `GET /companies/:companyId/briefings`
+- `POST /companies/:companyId/briefings`
+- `GET /companies/:companyId/briefings/board`
+- `GET /records/:recordId`
+- `PATCH /records/:recordId`
+- `POST /records/:recordId/links`
+- `POST /records/:recordId/attachments`
+- `POST /records/:recordId/generate`
+- `POST /records/:recordId/publish`
+- `POST /companies/:companyId/assets/files`
+
+Records are durable company-scoped executive artifacts with category:
+
+- `plan`
+- `result`
+- `briefing`
+
+Record kinds:
+
+- plans: `strategy_memo`, `project_brief`, `decision_record`, `operating_plan`, `weekly_objective`, `risk_register`
+- results: `deliverable`, `finding`, `blocker`, `decision_outcome`, `status_report`
+- briefings: `daily_briefing`, `weekly_briefing`, `executive_rollup`, `project_status_report`, `incident_summary`, `board_packet`
+
+Board summary payload must answer six questions directly:
+
+- `outcomesLanded`
+- `risksAndBlocks`
+- `decisionsNeeded`
+- `projectHealth`
+- `costAnomalies`
+- `executiveRollups`
+
+Board behavior:
+
+- `since=last_visit` is backed by persisted `briefing_view_states`, not browser-local state
+- `executiveRollups` returns the latest published `executive_rollup` per executive scope
+- `pricingState` must be explicit: `exact`, `estimated`, or `unpriced`
+- unpriceable usage must not be rendered as `$0.00`
+
+Every record mutation must emit `activity_log` entries with precise actor attribution.
+
 ## 10.9 Error Semantics
 
 - `400` validation error
@@ -670,6 +721,10 @@ V1 UI routes:
 - `/` dashboard
 - `/companies` company list/create
 - `/companies/:id/org` org chart and agent status
+- `/companies/:id/briefings/board` executive board
+- `/companies/:id/briefings/results` durable results library
+- `/companies/:id/briefings/plans` durable planning library
+- `/companies/:id/briefings/records/:recordId` plan/result/briefing detail
 - `/companies/:id/tasks` task list/kanban
 - `/companies/:id/agents/:agentId` agent detail
 - `/companies/:id/costs` cost and budget dashboard
