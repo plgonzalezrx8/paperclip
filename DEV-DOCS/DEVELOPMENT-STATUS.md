@@ -13,7 +13,7 @@ Last updated: 2026-03-09
 - Phase 4: `done`
   - milestone model and dedicated portfolio surface are now in code
 - Phase 5: `partial`
-  - repo-backed checkout isolation is shipped and issue/portfolio/company cost truthfulness improved, but checkout release/cleanup and full attribution normalization still need more work
+  - repo-backed checkout isolation is shipped, issue/portfolio/company cost truthfulness improved, and issues now logically release active checkouts when work leaves execution, but physical cleanup and full attribution normalization still need more work
 
 ## Branch state
 
@@ -36,7 +36,7 @@ Phase 1 created the basic executive surface. The remaining work is to make it fu
 
 - None at the repo/tooling level right now.
 - The remaining risk is completeness, not broken infra:
-  - checkout lifecycle is not fully mature yet
+  - checkout lifecycle is only logically mature; physical cleanup/reaping is still light
   - attribution auditing across every mutation path still deserves a deeper sweep
   - external delivery/search features remain intentionally out of scope for this sprint
 

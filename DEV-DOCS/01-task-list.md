@@ -36,13 +36,15 @@ Last updated: 2026-03-09
   - run process adapters in the resolved checkout cwd
   - normalize `knowledge` company routing
   - avoid misleading schedule defaults while record detail is still loading
+- Add logical checkout release semantics when an issue is released, reassigned, or leaves active execution
 
 ## Partial
 
 - Phase 5:
   - checkout reuse exists for repo-backed workspaces
   - issue and run UI show workspace metadata
-  - missing: checkout release/cleanup lifecycle and deeper attribution review
+  - logical checkout release exists
+  - missing: physical cleanup/reaping lifecycle and deeper attribution review
 
 ## Next
 

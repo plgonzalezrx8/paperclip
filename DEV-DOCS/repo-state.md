@@ -140,6 +140,8 @@ The recent executive-record work also shipped follow-up fixes:
 ## Major gaps still open after the current sprint branch
 
 - checkout lifecycle management is still light
+  - logical release of active checkout rows exists
+  - physical cleanup/reaping is still future work
 - attribution normalization still deserves a deeper audit sweep
 - notifications/external reporting are still separate work
 - knowledge search/retrieval is intentionally lightweight

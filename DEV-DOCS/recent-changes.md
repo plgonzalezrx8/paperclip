@@ -161,6 +161,7 @@ Visible effect:
 
 - issue detail and run detail now show the actual checkout path and branch that the run used
 - the workspace-isolation UI is grounded in persisted run metadata, not just in-memory runtime state
+- when an issue is released, reassigned, or moved out of active execution, its active checkout rows are now marked `released`
 
 ### 8. Briefing and routing polish removed misleading UI states
 
@@ -222,7 +223,7 @@ This branch moves far past the original Phase 1 merge, but some gaps still remai
 - no Slack/email/Discord delivery for briefings
 - no automatic plan-to-issue decomposition
 - no full worktree lifecycle management yet
-  - checkout cleanup/release is still minimal
+  - logical checkout release now exists, but physical cleanup/reaping is still minimal
 - attribution audit hardening still deserves a deeper sweep across every mutation path
 - the knowledge layer is lightweight by design
   - it is not a semantic search/retrieval system yet

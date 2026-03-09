@@ -67,3 +67,15 @@
   - `pnpm -r typecheck`
   - `pnpm test:run`
   - `pnpm build`
+
+### Session: checkout lifecycle follow-through
+
+- Added a logical checkout release boundary in `issues.ts`.
+- Active workspace checkout rows now transition to `released` when an issue:
+  - leaves `in_progress`
+  - changes assignee
+  - is explicitly released back to `todo`
+- Added focused unit coverage for the release-decision helper.
+- Re-ran focused verification:
+  - `pnpm --filter @paperclipai/server typecheck`
+  - `pnpm vitest run server/src/__tests__/issues-user-context.test.ts server/src/__tests__/costs-service.test.ts server/src/__tests__/process-adapter-workspace.test.ts`
