@@ -19,6 +19,7 @@ import {
   heartbeatService,
   issueApprovalService,
   issueService,
+  recordService,
   logActivity,
   projectService,
 } from "../services/index.js";
@@ -45,6 +46,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
   const projectsSvc = projectService(db);
   const goalsSvc = goalService(db);
   const issueApprovalsSvc = issueApprovalService(db);
+  const recordsSvc = recordService(db);
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 1 },
@@ -162,6 +164,196 @@ export function issueRoutes(db: Db, storage: StorageService) {
       }
     }
     return rawId;
+  }
+
+  type ReviewTarget = {
+    assigneeAgentId: string | null;
+    assigneeUserId: string | null;
+    source: "creator" | "project_lead" | "manager" | "existing";
+    label: string;
+  };
+
+  function firstNonEmptyLine(value: string | null | undefined) {
+    if (!value) return null;
+    const line = value
+      .split("\n")
+      .map((chunk) => chunk.trim())
+      .find(Boolean);
+    return line ?? null;
+  }
+
+  function truncate(value: string, max: number) {
+    if (value.length <= max) return value;
+    return `${value.slice(0, Math.max(0, max - 1))}...`;
+  }
+
+  async function resolveAgentReviewTarget(issue: {
+    companyId: string;
+    projectId: string | null;
+    createdByUserId: string | null;
+    assigneeAgentId: string | null;
+    assigneeUserId: string | null;
+  }, actorAgentId: string) {
+    // Prefer handing review back to the human who opened the task. If there is no active
+    // human creator, fall back to the project lead, then the agent's manager.
+    if (issue.createdByUserId) {
+      const members = await access.listMembers(issue.companyId);
+      const creatorMembership = members.find(
+        (member) =>
+          member.principalType === "user" &&
+          member.principalId === issue.createdByUserId &&
+          member.status === "active",
+      );
+      if (creatorMembership) {
+        return {
+          assigneeAgentId: null,
+          assigneeUserId: issue.createdByUserId,
+          source: "creator" as const,
+          label: "task creator",
+        };
+      }
+    }
+
+    if (issue.projectId) {
+      const project = await projectsSvc.getById(issue.projectId);
+      if (project?.companyId === issue.companyId && project.leadAgentId && project.leadAgentId !== actorAgentId) {
+        const lead = await agentsSvc.getById(project.leadAgentId);
+        if (lead && lead.companyId === issue.companyId && lead.status !== "terminated" && lead.status !== "pending_approval") {
+          return {
+            assigneeAgentId: lead.id,
+            assigneeUserId: null,
+            source: "project_lead" as const,
+            label: "project lead",
+          };
+        }
+      }
+    }
+
+    const actorAgent = await agentsSvc.getById(actorAgentId);
+    if (actorAgent?.companyId === issue.companyId && actorAgent.reportsTo && actorAgent.reportsTo !== actorAgentId) {
+      const manager = await agentsSvc.getById(actorAgent.reportsTo);
+      if (manager && manager.companyId === issue.companyId && manager.status !== "terminated" && manager.status !== "pending_approval") {
+        return {
+          assigneeAgentId: manager.id,
+          assigneeUserId: null,
+          source: "manager" as const,
+          label: "manager",
+        };
+      }
+    }
+
+    return {
+      assigneeAgentId: issue.assigneeAgentId,
+      assigneeUserId: issue.assigneeUserId,
+      source: "existing" as const,
+      label: issue.assigneeUserId ? "existing reviewer" : issue.assigneeAgentId ? "current assignee" : "unassigned review queue",
+    };
+  }
+
+  async function createAgentHandoffBriefing(input: {
+    issue: {
+      id: string;
+      identifier: string | null;
+      companyId: string;
+      projectId: string | null;
+      title: string;
+      createdByUserId: string | null;
+      assigneeAgentId: string | null;
+      assigneeUserId: string | null;
+    };
+    actorAgentId: string;
+    actorAgentName: string | null;
+    commentBody: string;
+    requestedStatus: "done" | "in_review";
+    reviewTarget: ReviewTarget;
+    actor: ReturnType<typeof getActorInfo>;
+  }) {
+    const issueLabel = input.issue.identifier ?? input.issue.id.slice(0, 8);
+    const summary = truncate(
+      firstNonEmptyLine(input.commentBody) ?? `${input.actorAgentName ?? "Agent"} marked the issue ready for review.`,
+      280,
+    );
+    const title = truncate(`Review ready: ${issueLabel} ${input.issue.title}`, 240);
+    const bodyMd = [
+      `# ${title}`,
+      "",
+      `## Agent Update`,
+      "",
+      input.commentBody.trim(),
+      "",
+      `## Handoff`,
+      "",
+      `- Requested status: ${input.requestedStatus.replace(/_/g, " ")}`,
+      `- Recorded status: in review`,
+      `- Review owner: ${input.reviewTarget.label}`,
+      `- Issue: ${issueLabel}`,
+    ];
+    if (input.issue.projectId) {
+      bodyMd.push(`- Project linked: yes`);
+    }
+
+    const created = await recordsSvc.createBriefing(
+      input.issue.companyId,
+      {
+        kind: "daily_briefing",
+        scopeType: input.issue.projectId ? "project" : "company",
+        scopeRefId: input.issue.projectId ?? input.issue.companyId,
+        title,
+        summary,
+        bodyMd: bodyMd.join("\n"),
+        ownerAgentId: input.actorAgentId,
+      },
+      { agentId: input.actorAgentId, userId: null },
+    );
+
+    await logActivity(db, {
+      companyId: created.companyId,
+      actorType: input.actor.actorType,
+      actorId: input.actor.actorId,
+      agentId: input.actor.agentId,
+      runId: input.actor.runId,
+      action: "record.created",
+      entityType: "record",
+      entityId: created.id,
+      details: {
+        category: created.category,
+        kind: created.kind,
+        scopeType: created.scopeType,
+        scopeRefId: created.scopeRefId,
+        sourceIssueId: input.issue.id,
+      },
+    });
+
+    await recordsSvc.addLink(created.id, {
+      targetType: "issue",
+      targetId: input.issue.id,
+      relation: "source",
+    });
+    if (input.issue.projectId) {
+      await recordsSvc.addLink(created.id, {
+        targetType: "project",
+        targetId: input.issue.projectId,
+        relation: "rollup",
+      });
+    }
+
+    const published = await recordsSvc.publish(created.id, { agentId: input.actorAgentId, userId: null });
+    await logActivity(db, {
+      companyId: published.companyId,
+      actorType: input.actor.actorType,
+      actorId: input.actor.actorId,
+      agentId: input.actor.agentId,
+      runId: input.actor.runId,
+      action: "record.published",
+      entityType: "record",
+      entityId: published.id,
+      details: {
+        category: published.category,
+        kind: published.kind,
+        sourceIssueId: input.issue.id,
+      },
+    });
+    return published;
   }
 
   // Resolve issue identifiers (e.g. "PAP-39") to UUIDs for all /issues/:id routes
@@ -464,27 +656,50 @@ export function issueRoutes(db: Db, storage: StorageService) {
       return;
     }
     assertCompanyAccess(req, existing.companyId);
+    const actor = getActorInfo(req);
+    const requestedAgentReviewStatus =
+      req.actor.type === "agent" && (req.body.status === "done" || req.body.status === "in_review")
+        ? req.body.status
+        : null;
+    const hiddenAtRaw = req.body.hiddenAt;
+    const commentBody = typeof req.body.comment === "string" ? req.body.comment : undefined;
+    const normalizedBody: Record<string, unknown> = { ...req.body };
+
+    let reviewTarget: ReviewTarget | null = null;
+    if (requestedAgentReviewStatus && req.actor.agentId) {
+      if (!commentBody?.trim()) {
+        res.status(422).json({ error: "Agents must include a handoff update when sending work to review." });
+        return;
+      }
+
+      // Agents never close work outright. A completion attempt becomes a review handoff.
+      normalizedBody.status = "in_review";
+      reviewTarget = await resolveAgentReviewTarget(existing, req.actor.agentId);
+      normalizedBody.assigneeAgentId = reviewTarget.assigneeAgentId;
+      normalizedBody.assigneeUserId = reviewTarget.assigneeUserId;
+    }
+
     const assigneeWillChange =
-      (req.body.assigneeAgentId !== undefined && req.body.assigneeAgentId !== existing.assigneeAgentId) ||
-      (req.body.assigneeUserId !== undefined && req.body.assigneeUserId !== existing.assigneeUserId);
+      (normalizedBody.assigneeAgentId !== undefined && normalizedBody.assigneeAgentId !== existing.assigneeAgentId) ||
+      (normalizedBody.assigneeUserId !== undefined && normalizedBody.assigneeUserId !== existing.assigneeUserId);
 
     const isAgentReturningIssueToCreator =
       req.actor.type === "agent" &&
       !!req.actor.agentId &&
       existing.assigneeAgentId === req.actor.agentId &&
-      req.body.assigneeAgentId === null &&
-      typeof req.body.assigneeUserId === "string" &&
+      normalizedBody.assigneeAgentId === null &&
+      typeof normalizedBody.assigneeUserId === "string" &&
       !!existing.createdByUserId &&
-      req.body.assigneeUserId === existing.createdByUserId;
+      normalizedBody.assigneeUserId === existing.createdByUserId;
 
     if (assigneeWillChange) {
-      if (!isAgentReturningIssueToCreator) {
+      if (!isAgentReturningIssueToCreator && !requestedAgentReviewStatus) {
         await assertCanAssignTasks(req, existing.companyId);
       }
     }
     if (!(await assertAgentRunCheckoutOwnership(req, res, existing))) return;
 
-    const { comment: commentBody, hiddenAt: hiddenAtRaw, ...updateFields } = req.body;
+    const { comment: _commentBody, hiddenAt: _normalizedHiddenAt, ...updateFields } = normalizedBody;
     if (hiddenAtRaw !== undefined) {
       updateFields.hiddenAt = hiddenAtRaw ? new Date(hiddenAtRaw) : null;
     }
@@ -528,7 +743,6 @@ export function issueRoutes(db: Db, storage: StorageService) {
       }
     }
 
-    const actor = getActorInfo(req);
     const hasFieldChanges = Object.keys(previous).length > 0;
     await logActivity(db, {
       companyId: issue.companyId,
@@ -542,6 +756,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
       details: {
         ...updateFields,
         identifier: issue.identifier,
+        ...(requestedAgentReviewStatus ? { requestedStatus: requestedAgentReviewStatus } : {}),
         ...(commentBody ? { source: "comment" } : {}),
         _previous: hasFieldChanges ? previous : undefined,
       },
@@ -572,6 +787,36 @@ export function issueRoutes(db: Db, storage: StorageService) {
         },
       });
 
+    }
+
+    if (
+      requestedAgentReviewStatus &&
+      req.actor.agentId &&
+      comment &&
+      issue.status === "in_review" &&
+      existing.status !== "in_review"
+    ) {
+      try {
+        const actorAgent = await agentsSvc.getById(req.actor.agentId);
+        await createAgentHandoffBriefing({
+          issue,
+          actorAgentId: req.actor.agentId,
+          actorAgentName: actorAgent?.name ?? null,
+          commentBody: comment.body,
+          requestedStatus: requestedAgentReviewStatus,
+          reviewTarget: reviewTarget ?? {
+            assigneeAgentId: issue.assigneeAgentId,
+            assigneeUserId: issue.assigneeUserId,
+            source: "existing",
+            label: "current review owner",
+          },
+          actor,
+        });
+      } catch (err) {
+        // Briefing creation is additive. The review handoff should still succeed even if
+        // the durable briefing write fails, otherwise the agent gets stuck in limbo.
+        logger.warn({ err, issueId: issue.id, agentId: req.actor.agentId }, "failed to auto-create agent handoff briefing");
+      }
     }
 
     const assigneeChanged = assigneeWillChange;

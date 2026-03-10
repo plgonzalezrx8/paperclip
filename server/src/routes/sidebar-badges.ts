@@ -19,11 +19,19 @@ export function sidebarBadgeRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     let canApproveJoins = false;
+    let unreadTouchedIssueCount = 0;
     if (req.actor.type === "board") {
       canApproveJoins =
         req.actor.source === "local_implicit" ||
         Boolean(req.actor.isInstanceAdmin) ||
         (await access.canUser(companyId, req.actor.userId, "joins:approve"));
+      if (req.actor.userId) {
+        unreadTouchedIssueCount = await issueSvc.countUnreadTouchedByUser(
+          companyId,
+          req.actor.userId,
+          "backlog,todo,in_progress,in_review,blocked,done",
+        );
+      }
     } else if (req.actor.type === "agent" && req.actor.agentId) {
       canApproveJoins = await access.hasPermission(companyId, "agent", req.actor.agentId, "joins:approve");
     }
@@ -38,6 +46,7 @@ export function sidebarBadgeRoutes(db: Db) {
 
     const badges = await svc.get(companyId, {
       joinRequests: joinRequestCount,
+      unreadTouchedIssues: unreadTouchedIssueCount,
     });
     const summary = await dashboard.summary(companyId);
     const staleIssueCount = await issueSvc.staleCount(companyId, 24 * 60);
@@ -45,7 +54,7 @@ export function sidebarBadgeRoutes(db: Db) {
     const alertsCount =
       (summary.agents.error > 0 && !hasFailedRuns ? 1 : 0) +
       (summary.costs.monthBudgetCents > 0 && summary.costs.monthUtilizationPercent >= 80 ? 1 : 0);
-    badges.inbox = badges.failedRuns + alertsCount + staleIssueCount + joinRequestCount + badges.approvals;
+    badges.inbox = badges.failedRuns + alertsCount + staleIssueCount + joinRequestCount + badges.approvals + unreadTouchedIssueCount;
 
     res.json(badges);
   });
