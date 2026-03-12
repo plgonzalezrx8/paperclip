@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { COMPANY_STATUSES } from "../constants.js";
+import { COMPANY_STATUSES, MANAGER_PLANNING_MODES } from "../constants.js";
 
 export const createCompanySchema = z.object({
   name: z.string().min(1),
@@ -15,6 +15,7 @@ export const updateCompanySchema = createCompanySchema
     status: z.enum(COMPANY_STATUSES).optional(),
     spentMonthlyCents: z.number().int().nonnegative().optional(),
     requireBoardApprovalForNewAgents: z.boolean().optional(),
+    defaultManagerPlanningMode: z.enum(MANAGER_PLANNING_MODES).optional(),
     brandColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
   });
 

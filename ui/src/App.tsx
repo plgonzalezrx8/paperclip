@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Navigate, Outlet, Route, Routes, useLocation } from "@/lib/router";
+import { Navigate, Outlet, Route, Routes, useLocation, useParams } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Layout } from "./components/Layout";
@@ -112,6 +112,7 @@ function boardRoutes() {
       <Route path="projects" element={<Projects />} />
       <Route path="projects/:projectId" element={<ProjectDetail />} />
       <Route path="projects/:projectId/overview" element={<ProjectDetail />} />
+      <Route path="projects/:projectId/configuration" element={<ProjectDetail />} />
       <Route path="projects/:projectId/issues" element={<ProjectDetail />} />
       <Route path="projects/:projectId/issues/:filter" element={<ProjectDetail />} />
       <Route path="issues" element={<Issues />} />
@@ -121,8 +122,10 @@ function boardRoutes() {
       <Route path="issues/done" element={<Navigate to="/issues" replace />} />
       <Route path="issues/recent" element={<Navigate to="/issues" replace />} />
       <Route path="issues/:issueId" element={<IssueDetail />} />
-      <Route path="goals" element={<Goals />} />
-      <Route path="goals/:goalId" element={<GoalDetail />} />
+      <Route path="roadmap" element={<Goals />} />
+      <Route path="roadmap/:goalId" element={<GoalDetail />} />
+      <Route path="goals" element={<LegacyGoalRedirect />} />
+      <Route path="goals/:goalId" element={<LegacyGoalRedirect />} />
       <Route path="approvals" element={<Navigate to="/approvals/pending" replace />} />
       <Route path="approvals/pending" element={<Approvals />} />
       <Route path="approvals/all" element={<Approvals />} />
@@ -187,6 +190,11 @@ function UnprefixedBoardRedirect() {
   );
 }
 
+function LegacyGoalRedirect() {
+  const { goalId } = useParams<{ goalId?: string }>();
+  return <Navigate to={goalId ? `/roadmap/${goalId}` : "/roadmap"} replace />;
+}
+
 function NoCompaniesStartPage({ autoOpen = true }: { autoOpen?: boolean }) {
   const { openOnboarding } = useDialog();
   const opened = useRef(false);
@@ -234,8 +242,13 @@ export function App() {
           <Route path="projects" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/overview" element={<UnprefixedBoardRedirect />} />
+          <Route path="projects/:projectId/configuration" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/issues" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/issues/:filter" element={<UnprefixedBoardRedirect />} />
+          <Route path="roadmap" element={<UnprefixedBoardRedirect />} />
+          <Route path="roadmap/:goalId" element={<UnprefixedBoardRedirect />} />
+          <Route path="goals" element={<UnprefixedBoardRedirect />} />
+          <Route path="goals/:goalId" element={<UnprefixedBoardRedirect />} />
           <Route path="briefings" element={<UnprefixedBoardRedirect />} />
           <Route path="briefings/*" element={<UnprefixedBoardRedirect />} />
           <Route path=":companyPrefix" element={<Layout />}>

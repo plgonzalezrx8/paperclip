@@ -24,6 +24,9 @@ function GoalNode({ goal, children, allGoals, depth, goalLink, onSelect }: GoalN
   const [expanded, setExpanded] = useState(true);
   const hasChildren = children.length > 0;
   const link = goalLink?.(goal);
+  const guidancePreview = goal.guidance
+    ? goal.guidance.replace(/[#*_`>-]/g, " ").replace(/\s+/g, " ").trim()
+    : "";
 
   const inner = (
     <>
@@ -44,7 +47,14 @@ function GoalNode({ goal, children, allGoals, depth, goalLink, onSelect }: GoalN
         <span className="w-4" />
       )}
       <span className="text-xs text-muted-foreground capitalize">{goal.level}</span>
-      <span className="flex-1 truncate">{goal.title}</span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate">{goal.title}</div>
+        {guidancePreview && (
+          <div className="truncate text-xs text-muted-foreground">
+            {guidancePreview}
+          </div>
+        )}
+      </div>
       <StatusBadge status={goal.status} />
     </>
   );
@@ -96,7 +106,7 @@ export function GoalTree({ goals, goalLink, onSelect }: GoalTreeProps) {
   const roots = goals.filter((g) => !g.parentId || !goalIds.has(g.parentId));
 
   if (goals.length === 0) {
-    return <p className="text-sm text-muted-foreground">No goals.</p>;
+    return <p className="text-sm text-muted-foreground">No roadmap items.</p>;
   }
 
   return (

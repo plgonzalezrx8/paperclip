@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   AGENT_ADAPTER_TYPES,
   AGENT_ICON_NAMES,
+  MANAGER_PLANNING_MODES,
   AGENT_ROLES,
   AGENT_STATUSES,
 } from "../constants.js";
@@ -36,6 +37,7 @@ export const createAgentSchema = z.object({
   runtimeConfig: z.record(z.unknown()).optional().default({}),
   budgetMonthlyCents: z.number().int().nonnegative().optional().default(0),
   permissions: agentPermissionsSchema.optional(),
+  managerPlanningModeOverride: z.enum(MANAGER_PLANNING_MODES).optional().nullable(),
   metadata: z.record(z.unknown()).optional().nullable(),
 });
 

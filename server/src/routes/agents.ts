@@ -30,7 +30,7 @@ import {
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { findServerAdapter, listAdapterModels } from "../adapters/index.js";
-import { redactEventPayload } from "../redaction.js";
+import { redactEventPayload, redactSensitiveText } from "../redaction.js";
 import { runClaudeLogin } from "@paperclipai/adapter-claude-local/server";
 import {
   DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX,
@@ -333,6 +333,8 @@ export function agentRoutes(db: Db) {
       adapterConfig: redactEventPayload(agent.adapterConfig),
       runtimeConfig: redactEventPayload(agent.runtimeConfig),
       permissions: agent.permissions,
+      managerPlanningModeOverride: agent.managerPlanningModeOverride,
+      resolvedManagerPlanningMode: agent.resolvedManagerPlanningMode,
       updatedAt: agent.updatedAt,
     };
   }
@@ -712,6 +714,7 @@ export function agentRoutes(db: Db) {
             typeof normalizedHireInput.budgetMonthlyCents === "number"
               ? normalizedHireInput.budgetMonthlyCents
               : agent.budgetMonthlyCents,
+          managerPlanningModeOverride: normalizedHireInput.managerPlanningModeOverride ?? null,
           metadata: requestedMetadata,
           agentId: agent.id,
           requestedByAgentId: actor.actorType === "agent" ? actor.actorId : null,
@@ -1401,7 +1404,11 @@ export function agentRoutes(db: Db) {
       limitBytes: Number.isFinite(limitBytes) ? limitBytes : 256000,
     });
 
-    res.json(result);
+    res.json({
+      ...result,
+      // Logs are plain text, so redact secret-looking substrings before returning them.
+      content: redactSensitiveText(result.content),
+    });
   });
 
   router.get("/issues/:issueId/live-runs", async (req, res) => {

@@ -19,7 +19,13 @@ import { projectUrl } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus } from "lucide-react";
-import type { Goal, Project } from "@paperclipai/shared";
+import type { Goal, GoalPlanningHorizon, Project } from "@paperclipai/shared";
+
+const ROADMAP_HORIZON_LABELS: Record<GoalPlanningHorizon, string> = {
+  now: "Now",
+  next: "Next",
+  later: "Later",
+};
 
 export function GoalDetail() {
   const { goalId } = useParams<{ goalId: string }>();
@@ -93,8 +99,8 @@ export function GoalDetail() {
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: "Goals", href: "/goals" },
-      { label: goal?.title ?? goalId ?? "Goal" }
+      { label: "Roadmap", href: "/roadmap" },
+      { label: goal?.title ?? goalId ?? "Roadmap Item" }
     ]);
   }, [setBreadcrumbs, goal, goalId]);
 
@@ -121,6 +127,9 @@ export function GoalDetail() {
           <span className="text-xs uppercase text-muted-foreground">
             {goal.level}
           </span>
+          <span className="text-xs uppercase text-muted-foreground">
+            {ROADMAP_HORIZON_LABELS[goal.planningHorizon]}
+          </span>
           <StatusBadge status={goal.status} />
         </div>
 
@@ -143,12 +152,26 @@ export function GoalDetail() {
             return asset.contentPath;
           }}
         />
+
+        <div className="space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Manager guidance
+          </p>
+          <InlineEditor
+            value={goal.guidance ?? ""}
+            onSave={(guidance) => updateGoal.mutate({ guidance })}
+            as="p"
+            className="text-sm text-muted-foreground"
+            placeholder="Describe how managers should use this roadmap item when deciding what to do next."
+            multiline
+          />
+        </div>
       </div>
 
       <Tabs defaultValue="children">
         <TabsList>
           <TabsTrigger value="children">
-            Sub-Goals ({childGoals.length})
+            Sub-Items ({childGoals.length})
           </TabsTrigger>
           <TabsTrigger value="projects">
             Projects ({linkedProjects.length})
@@ -163,13 +186,13 @@ export function GoalDetail() {
               onClick={() => openNewGoal({ parentId: goalId })}
             >
               <Plus className="h-3.5 w-3.5 mr-1.5" />
-              Sub Goal
+              Sub-Item
             </Button>
           </div>
           {childGoals.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No sub-goals.</p>
+            <p className="text-sm text-muted-foreground">No child roadmap items.</p>
           ) : (
-            <GoalTree goals={childGoals} goalLink={(g) => `/goals/${g.id}`} />
+            <GoalTree goals={childGoals} goalLink={(g) => `/roadmap/${g.id}`} />
           )}
         </TabsContent>
 

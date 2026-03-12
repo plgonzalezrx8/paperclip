@@ -8,6 +8,7 @@ import {
   agentRuntimeState,
   agentTaskSessions,
   agentWakeupRequests,
+  companies,
   heartbeatRunEvents,
   heartbeatRuns,
 } from "@paperclipai/db";
@@ -59,6 +60,15 @@ interface AgentShortnameRow {
 
 interface AgentShortnameCollisionOptions {
   excludeAgentId?: string | null;
+}
+
+function resolveManagerPlanningMode(
+  companyDefault: string | null | undefined,
+  override: string | null | undefined,
+) {
+  // Planning mode is read frequently by routes and the UI, so services normalize the
+  // company default + agent override once instead of duplicating fallback logic everywhere.
+  return (override ?? companyDefault ?? "automatic") as "automatic" | "approval_required";
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -189,10 +199,27 @@ export function agentService(db: Db) {
     };
   }
 
-  function normalizeAgentRow(row: typeof agents.$inferSelect) {
+  async function getCompanyDefaultManagerPlanningMode(companyId: string) {
+    const company = await db
+      .select({ defaultManagerPlanningMode: companies.defaultManagerPlanningMode })
+      .from(companies)
+      .where(eq(companies.id, companyId))
+      .then((rows) => rows[0] ?? null);
+    return company?.defaultManagerPlanningMode ?? "automatic";
+  }
+
+  function normalizeAgentRow(
+    row: typeof agents.$inferSelect,
+    companyDefaultManagerPlanningMode: string,
+  ) {
     return withUrlKey({
       ...row,
       permissions: normalizeAgentPermissions(row.permissions, row.role),
+      managerPlanningModeOverride: row.managerPlanningModeOverride ?? null,
+      resolvedManagerPlanningMode: resolveManagerPlanningMode(
+        companyDefaultManagerPlanningMode,
+        row.managerPlanningModeOverride,
+      ),
     });
   }
 
@@ -202,7 +229,9 @@ export function agentService(db: Db) {
       .from(agents)
       .where(eq(agents.id, id))
       .then((rows) => rows[0] ?? null);
-    return row ? normalizeAgentRow(row) : null;
+    if (!row) return null;
+    const companyDefaultManagerPlanningMode = await getCompanyDefaultManagerPlanningMode(row.companyId);
+    return normalizeAgentRow(row, companyDefaultManagerPlanningMode);
   }
 
   async function ensureManager(companyId: string, managerId: string) {
@@ -301,7 +330,13 @@ export function agentService(db: Db) {
       .where(eq(agents.id, id))
       .returning()
       .then((rows) => rows[0] ?? null);
-    const normalizedUpdated = updated ? normalizeAgentRow(updated) : null;
+    const companyDefaultManagerPlanningMode = updated
+      ? await getCompanyDefaultManagerPlanningMode(updated.companyId)
+      : null;
+    const normalizedUpdated =
+      updated && companyDefaultManagerPlanningMode
+        ? normalizeAgentRow(updated, companyDefaultManagerPlanningMode)
+        : null;
 
     if (normalizedUpdated && shouldRecordRevision && beforeConfig) {
       const afterConfig = buildConfigSnapshot(normalizedUpdated);
@@ -331,7 +366,8 @@ export function agentService(db: Db) {
         conditions.push(ne(agents.status, "terminated"));
       }
       const rows = await db.select().from(agents).where(and(...conditions));
-      return rows.map(normalizeAgentRow);
+      const companyDefaultManagerPlanningMode = await getCompanyDefaultManagerPlanningMode(companyId);
+      return rows.map((row) => normalizeAgentRow(row, companyDefaultManagerPlanningMode));
     },
 
     getById,
@@ -354,8 +390,8 @@ export function agentService(db: Db) {
         .values({ ...data, name: uniqueName, companyId, role, permissions: normalizedPermissions })
         .returning()
         .then((rows) => rows[0]);
-
-      return normalizeAgentRow(created);
+      const companyDefaultManagerPlanningMode = await getCompanyDefaultManagerPlanningMode(companyId);
+      return normalizeAgentRow(created, companyDefaultManagerPlanningMode);
     },
 
     update: updateAgent,
@@ -371,7 +407,9 @@ export function agentService(db: Db) {
         .where(eq(agents.id, id))
         .returning()
         .then((rows) => rows[0] ?? null);
-      return updated ? normalizeAgentRow(updated) : null;
+      if (!updated) return null;
+      const companyDefaultManagerPlanningMode = await getCompanyDefaultManagerPlanningMode(updated.companyId);
+      return normalizeAgentRow(updated, companyDefaultManagerPlanningMode);
     },
 
     resume: async (id: string) => {
@@ -388,7 +426,9 @@ export function agentService(db: Db) {
         .where(eq(agents.id, id))
         .returning()
         .then((rows) => rows[0] ?? null);
-      return updated ? normalizeAgentRow(updated) : null;
+      if (!updated) return null;
+      const companyDefaultManagerPlanningMode = await getCompanyDefaultManagerPlanningMode(updated.companyId);
+      return normalizeAgentRow(updated, companyDefaultManagerPlanningMode);
     },
 
     terminate: async (id: string) => {
@@ -425,7 +465,9 @@ export function agentService(db: Db) {
           .where(eq(agents.id, id))
           .returning()
           .then((rows) => rows[0] ?? null);
-        return deleted ? normalizeAgentRow(deleted) : null;
+        if (!deleted) return null;
+        const companyDefaultManagerPlanningMode = await getCompanyDefaultManagerPlanningMode(deleted.companyId);
+        return normalizeAgentRow(deleted, companyDefaultManagerPlanningMode);
       });
     },
 
@@ -440,8 +482,9 @@ export function agentService(db: Db) {
         .where(eq(agents.id, id))
         .returning()
         .then((rows) => rows[0] ?? null);
-
-      return updated ? normalizeAgentRow(updated) : null;
+      if (!updated) return null;
+      const companyDefaultManagerPlanningMode = await getCompanyDefaultManagerPlanningMode(updated.companyId);
+      return normalizeAgentRow(updated, companyDefaultManagerPlanningMode);
     },
 
     updatePermissions: async (id: string, permissions: { canCreateAgents: boolean }) => {
@@ -457,8 +500,9 @@ export function agentService(db: Db) {
         .where(eq(agents.id, id))
         .returning()
         .then((rows) => rows[0] ?? null);
-
-      return updated ? normalizeAgentRow(updated) : null;
+      if (!updated) return null;
+      const companyDefaultManagerPlanningMode = await getCompanyDefaultManagerPlanningMode(updated.companyId);
+      return normalizeAgentRow(updated, companyDefaultManagerPlanningMode);
     },
 
     listConfigRevisions: async (id: string) =>
@@ -557,7 +601,8 @@ export function agentService(db: Db) {
         .select()
         .from(agents)
         .where(and(eq(agents.companyId, companyId), ne(agents.status, "terminated")));
-      const normalizedRows = rows.map(normalizeAgentRow);
+      const companyDefaultManagerPlanningMode = await getCompanyDefaultManagerPlanningMode(companyId);
+      const normalizedRows = rows.map((row) => normalizeAgentRow(row, companyDefaultManagerPlanningMode));
       const byManager = new Map<string | null, typeof normalizedRows>();
       for (const row of normalizedRows) {
         const key = row.reportsTo ?? null;
@@ -618,8 +663,9 @@ export function agentService(db: Db) {
       }
 
       const rows = await db.select().from(agents).where(eq(agents.companyId, companyId));
+      const companyDefaultManagerPlanningMode = await getCompanyDefaultManagerPlanningMode(companyId);
       const matches = rows
-        .map(normalizeAgentRow)
+        .map((row) => normalizeAgentRow(row, companyDefaultManagerPlanningMode))
         .filter((agent) => agent.urlKey === urlKey && agent.status !== "terminated");
       if (matches.length === 1) {
         return { agent: matches[0] ?? null, ambiguous: false } as const;

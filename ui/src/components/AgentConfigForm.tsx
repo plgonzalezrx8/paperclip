@@ -162,7 +162,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const { mode, adapterModels: externalModels } = props;
   const isCreate = mode === "create";
   const cards = props.sectionLayout === "cards";
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const queryClient = useQueryClient();
 
   const { data: availableSecrets = [] } = useQuery({
@@ -417,6 +417,45 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 className={inputClass}
                 placeholder="e.g. VP of Engineering"
               />
+            </Field>
+            <Field
+              label="Planning mode"
+              hint="Override whether this manager can start top-level work automatically or must wait for approval."
+            >
+              <div className="flex flex-wrap gap-2">
+                {[
+                  {
+                    value: "__company_default__",
+                    label: `Use company default (${selectedCompany?.defaultManagerPlanningMode === "approval_required" ? "Approval required" : "Automatic"})`,
+                  },
+                  { value: "automatic", label: "Automatic" },
+                  { value: "approval_required", label: "Approval required" },
+                ].map((option) => {
+                  const currentValue =
+                    (eff(
+                      "identity",
+                      "managerPlanningModeOverride",
+                      props.agent.managerPlanningModeOverride ?? "__company_default__",
+                    ) as string | null) ?? "__company_default__";
+                  return (
+                    <Button
+                      key={option.value}
+                      type="button"
+                      variant={currentValue === option.value ? "default" : "outline"}
+                      size="sm"
+                      onClick={() =>
+                        mark(
+                          "identity",
+                          "managerPlanningModeOverride",
+                          option.value === "__company_default__" ? null : option.value,
+                        )
+                      }
+                    >
+                      {option.label}
+                    </Button>
+                  );
+                })}
+              </div>
             </Field>
             <Field label="Capabilities" hint={help.capabilities}>
               <MarkdownEditor

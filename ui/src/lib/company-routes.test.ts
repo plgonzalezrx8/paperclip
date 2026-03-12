@@ -13,4 +13,16 @@ describe("company route helpers", () => {
   it("normalizes prefixed knowledge paths back to company-relative urls", () => {
     expect(toCompanyRelativePath("/EXE/knowledge?entry=abc")).toBe("/knowledge?entry=abc");
   });
+
+  it("prefixes roadmap routes like other board surfaces", () => {
+    expect(applyCompanyPrefix("/roadmap", "EXE")).toBe("/EXE/roadmap");
+  });
+
+  it("keeps legacy goals routes recognized as board paths", () => {
+    expect(extractCompanyPrefixFromPath("/goals/goal-1")).toBeNull();
+  });
+
+  it("normalizes prefixed roadmap detail paths back to company-relative urls", () => {
+    expect(toCompanyRelativePath("/EXE/roadmap/goal-1")).toBe("/roadmap/goal-1");
+  });
 });

@@ -52,7 +52,7 @@ function createValuesForAdapterType(
 }
 
 export function NewAgent() {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -66,6 +66,10 @@ export function NewAgent() {
   const [configValues, setConfigValues] = useState<CreateConfigValues>(defaultCreateValues);
   const [roleOpen, setRoleOpen] = useState(false);
   const [reportsToOpen, setReportsToOpen] = useState(false);
+  const [managerPlanningModeOverride, setManagerPlanningModeOverride] = useState<
+    "automatic" | "approval_required" | null
+  >(null);
+  const [managerPlanningModeOpen, setManagerPlanningModeOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const { data: agents } = useQuery({
@@ -181,11 +185,17 @@ export function NewAgent() {
           maxConcurrentRuns: 1,
         },
       },
+      managerPlanningModeOverride,
       budgetMonthlyCents: 0,
     });
   }
 
   const currentReportsTo = (agents ?? []).find((a) => a.id === reportsTo);
+  const managerPlanningModeLabel = managerPlanningModeOverride
+    ? managerPlanningModeOverride === "approval_required"
+      ? "Approval required"
+      : "Automatic"
+    : `Use company default (${selectedCompany?.defaultManagerPlanningMode === "approval_required" ? "Approval required" : "Automatic"})`;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -293,6 +303,38 @@ export function NewAgent() {
                   <AgentIcon icon={a.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
                   {a.name}
                   <span className="text-muted-foreground ml-auto">{roleLabels[a.role] ?? a.role}</span>
+                </button>
+              ))}
+            </PopoverContent>
+          </Popover>
+
+          <Popover open={managerPlanningModeOpen} onOpenChange={setManagerPlanningModeOpen}>
+            <PopoverTrigger asChild>
+              <button
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors"
+              >
+                <Shield className="h-3 w-3 text-muted-foreground" />
+                {managerPlanningModeLabel}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-1" align="start">
+              {[
+                { value: null, label: managerPlanningModeLabel.startsWith("Use company default") ? managerPlanningModeLabel : `Use company default (${selectedCompany?.defaultManagerPlanningMode === "approval_required" ? "Approval required" : "Automatic"})` },
+                { value: "automatic", label: "Automatic" },
+                { value: "approval_required", label: "Approval required" },
+              ].map((option) => (
+                <button
+                  key={option.label}
+                  className={cn(
+                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                    option.value === managerPlanningModeOverride && "bg-accent"
+                  )}
+                  onClick={() => {
+                    setManagerPlanningModeOverride(option.value as "automatic" | "approval_required" | null);
+                    setManagerPlanningModeOpen(false);
+                  }}
+                >
+                  {option.label}
                 </button>
               ))}
             </PopoverContent>

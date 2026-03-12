@@ -36,7 +36,7 @@ function PropertyRow({ label, children }: { label: string; children: React.React
 }
 
 export function AgentProperties({ agent, runtimeState }: AgentPropertiesProps) {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -62,6 +62,20 @@ export function AgentProperties({ agent, runtimeState }: AgentPropertiesProps) {
         )}
         <PropertyRow label="Adapter">
           <span className="text-sm font-mono">{adapterLabels[agent.adapterType] ?? agent.adapterType}</span>
+        </PropertyRow>
+        <PropertyRow label="Planning">
+          <span className="text-sm">
+            {agent.managerPlanningModeOverride
+              ? agent.managerPlanningModeOverride === "approval_required"
+                ? "Approval required"
+                : "Automatic"
+              : `Company default (${selectedCompany?.defaultManagerPlanningMode === "approval_required" ? "Approval required" : "Automatic"})`}
+          </span>
+        </PropertyRow>
+        <PropertyRow label="Effective">
+          <span className="text-sm">
+            {agent.resolvedManagerPlanningMode === "approval_required" ? "Approval required" : "Automatic"}
+          </span>
         </PropertyRow>
       </div>
 

@@ -127,6 +127,12 @@ export type GoalLevel = (typeof GOAL_LEVELS)[number];
 export const GOAL_STATUSES = ["planned", "active", "achieved", "cancelled"] as const;
 export type GoalStatus = (typeof GOAL_STATUSES)[number];
 
+export const GOAL_PLANNING_HORIZONS = ["now", "next", "later"] as const;
+export type GoalPlanningHorizon = (typeof GOAL_PLANNING_HORIZONS)[number];
+
+export const MANAGER_PLANNING_MODES = ["automatic", "approval_required"] as const;
+export type ManagerPlanningMode = (typeof MANAGER_PLANNING_MODES)[number];
+
 export const PROJECT_STATUSES = [
   "backlog",
   "planned",
@@ -228,7 +234,7 @@ export type MilestoneStatus = (typeof MILESTONE_STATUSES)[number];
 export const WORKSPACE_CHECKOUT_STATUSES = ["active", "released", "unavailable", "error"] as const;
 export type WorkspaceCheckoutStatus = (typeof WORKSPACE_CHECKOUT_STATUSES)[number];
 
-export const APPROVAL_TYPES = ["hire_agent", "approve_ceo_strategy"] as const;
+export const APPROVAL_TYPES = ["hire_agent", "approve_ceo_strategy", "approve_manager_plan"] as const;
 export type ApprovalType = (typeof APPROVAL_TYPES)[number];
 
 export const APPROVAL_STATUSES = [

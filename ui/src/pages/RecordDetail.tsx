@@ -86,8 +86,8 @@ function resolveLinkedEntity(
   }
   if (link.targetType === "goal") {
     return {
-      label: `Goal ${link.targetId.slice(0, 8)}`,
-      href: `/goals/${link.targetId}`,
+      label: `Roadmap ${link.targetId.slice(0, 8)}`,
+      href: `/roadmap/${link.targetId}`,
     };
   }
   return {

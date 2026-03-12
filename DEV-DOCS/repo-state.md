@@ -1,6 +1,6 @@
 # Repository State Snapshot (Verified)
 
-Date: 2026-03-09
+Date: 2026-03-10
 
 ## Monorepo + tooling
 
@@ -16,6 +16,7 @@ Date: 2026-03-09
 Top-level scripts (`package.json`):
 
 - Dev:
+  - `pnpm start`
   - `pnpm dev` (full dev runner)
   - `pnpm dev:watch`
   - `pnpm dev:once`
@@ -67,7 +68,12 @@ If the app "looks fine" but the shape is unclear, this is the current mental mod
 - `/dashboard`
   - still the narrow telemetry/operations page
   - metric cards, charts, recent activity, recent tasks
-  - not the new executive summary surface
+  - now also includes `System Health` with subsystem diagnostics
+- `/roadmap`
+  - operator-facing strategic backlog
+  - backed by the existing `goals` model
+  - grouped by `now / next / later`
+  - carries manager-facing guidance text
 - `/briefings/board`
   - new executive board added in the recent merge
   - answers: outcomes landed, risks/blocks, decisions needed, project health, cost anomalies, executive rollups
@@ -90,6 +96,10 @@ If the app "looks fine" but the shape is unclear, this is the current mental mod
   - still part of the operational layer
   - now include "Promote to result" entry points so execution artifacts can become durable outputs
   - agent run detail also exposes persisted workspace-isolation metadata such as checkout path and branch
+- `/company/settings`
+  - includes default manager planning mode
+- agent create/edit/detail surfaces
+  - include manager planning mode override and resolved planning mode visibility
 
 ## Recent architecture additions now present in code
 
@@ -109,6 +119,8 @@ The repository now includes a durable executive-record layer in addition to goal
   - record scopes: `company`, `project`, `agent`
   - explicit plan/result/briefing kind enums
   - explicit health and pricing-state enums
+  - explicit manager planning mode enums
+  - subsystem health response types
 - Server routes:
   - company-scoped CRUD/list routes for plans, results, and briefings
   - board summary endpoint at `/api/companies/:companyId/briefings/board`
@@ -118,6 +130,8 @@ The repository now includes a durable executive-record layer in addition to goal
   - knowledge routes under `/api/companies/:companyId/knowledge` and `/api/knowledge/:entryId`
   - milestone CRUD under `/api/projects/:id/milestones`
   - generic asset upload route at `/api/companies/:companyId/assets/files`
+  - roadmap aliases at `/api/companies/:companyId/roadmap` and `/api/roadmap/:id`
+  - subsystem diagnostics at `/api/health/subsystems`
 - UI routes:
   - `/briefings`
   - `/briefings/board`
@@ -127,6 +141,19 @@ The repository now includes a durable executive-record layer in addition to goal
   - `/briefings/portfolio`
   - `/briefings/records/:recordId`
   - `/knowledge`
+  - `/roadmap`
+
+## Governance model now present in code
+
+The current governance chain is:
+
+- companies define `defaultManagerPlanningMode`
+- agents may override with `managerPlanningModeOverride`
+- the server resolves `resolvedManagerPlanningMode`
+- `approve_manager_plan` approvals can authorize top-level manager work
+- top-level agent issue creation enforces `approvalId` when the resolved mode is `approval_required`
+
+The old goal links are still the storage backbone for roadmap ancestry and project linkage.
 
 ## Security/runtime corrections included in the merged feature work
 
@@ -163,6 +190,7 @@ Two documentation trees exist and are both active in-repo:
 
 - `docs/` (Mintlify-oriented docs, includes API/deploy/start/adapters sections)
 - `doc/` (engineering notes/specs/plans and legacy/internal docs)
+- `DEV-DOCS/` (workspace-trustworthy execution and architecture snapshot, including the new `ARCHITECTURE.md`)
 
 ## Test footprint (high-level)
 

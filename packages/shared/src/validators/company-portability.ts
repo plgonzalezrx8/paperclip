@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MANAGER_PLANNING_MODES } from "../constants.js";
 
 export const portabilityIncludeSchema = z
   .object({
@@ -20,6 +21,7 @@ export const portabilityCompanyManifestEntrySchema = z.object({
   description: z.string().nullable(),
   brandColor: z.string().nullable(),
   requireBoardApprovalForNewAgents: z.boolean(),
+  defaultManagerPlanningMode: z.enum(MANAGER_PLANNING_MODES),
 });
 
 export const portabilityAgentManifestEntrySchema = z.object({
@@ -35,6 +37,7 @@ export const portabilityAgentManifestEntrySchema = z.object({
   adapterConfig: z.record(z.unknown()),
   runtimeConfig: z.record(z.unknown()),
   permissions: z.record(z.unknown()),
+  managerPlanningModeOverride: z.enum(MANAGER_PLANNING_MODES).nullable(),
   budgetMonthlyCents: z.number().int().nonnegative(),
   metadata: z.record(z.unknown()).nullable(),
 });

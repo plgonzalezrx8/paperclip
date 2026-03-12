@@ -1,6 +1,12 @@
+import path from "path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
   test: {
     // The current UI tests cover pure route helpers and do not require a DOM.
     // Keep the environment in Node until we add component-rendering tests.

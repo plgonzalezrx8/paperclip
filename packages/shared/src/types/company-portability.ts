@@ -16,6 +16,7 @@ export interface CompanyPortabilityCompanyManifestEntry {
   description: string | null;
   brandColor: string | null;
   requireBoardApprovalForNewAgents: boolean;
+  defaultManagerPlanningMode: "automatic" | "approval_required";
 }
 
 export interface CompanyPortabilityAgentManifestEntry {
@@ -31,6 +32,7 @@ export interface CompanyPortabilityAgentManifestEntry {
   adapterConfig: Record<string, unknown>;
   runtimeConfig: Record<string, unknown>;
   permissions: Record<string, unknown>;
+  managerPlanningModeOverride: "automatic" | "approval_required" | null;
   budgetMonthlyCents: number;
   metadata: Record<string, unknown> | null;
 }

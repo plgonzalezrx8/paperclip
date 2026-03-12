@@ -26,6 +26,7 @@ import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } from "../adapters/utils.js";
 import { secretService } from "./secrets.js";
 import { resolveDefaultAgentCheckoutDir, resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
+import { summarizeHeartbeatRunResultJson } from "./heartbeat-run-summary.js";
 
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
@@ -1471,7 +1472,8 @@ export function heartbeatService(db: Db) {
         });
       };
       for (const warning of runtimeWorkspaceWarnings) {
-        await onLog("stderr", `[paperclip] ${warning}\n`);
+        // Workspace fallbacks are useful operator context, but they are not execution errors.
+        await onLog("stdout", `[paperclip] ${warning}\n`);
       }
 
       const config = parseObject(agent.adapterConfig);
@@ -2324,10 +2326,14 @@ export function heartbeatService(db: Db) {
         )
         .orderBy(desc(heartbeatRuns.createdAt));
 
-      if (limit) {
-        return query.limit(limit);
-      }
-      return query;
+      return (limit ? query.limit(limit) : query).then((rows) =>
+        rows.map((row) => ({
+          ...row,
+          resultJson: summarizeHeartbeatRunResultJson(
+            row.resultJson as Record<string, unknown> | null | undefined,
+          ),
+        })),
+      );
     },
 
     getRun,

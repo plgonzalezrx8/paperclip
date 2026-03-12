@@ -1,10 +1,16 @@
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { goals } from "@paperclipai/db";
 
 export function goalService(db: Db) {
   return {
-    list: (companyId: string) => db.select().from(goals).where(eq(goals.companyId, companyId)),
+    list: (companyId: string) =>
+      db
+        .select()
+        .from(goals)
+        .where(eq(goals.companyId, companyId))
+        // Roadmap consumers expect a stable order so parent/child trees render predictably.
+        .orderBy(asc(goals.sortOrder), asc(goals.createdAt)),
 
     getById: (id: string) =>
       db

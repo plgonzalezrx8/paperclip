@@ -1,50 +1,62 @@
 # Start Here
 
-Last updated: 2026-03-09
+Last updated: 2026-03-11
 
 ## Current focus
 
-Paperclip has already shipped the first executive-layer slice:
+Paperclip has already shipped the executive-layer sprint and now includes the next operational governance layer:
 
-- `/briefings/board`
-- `/briefings/results`
-- `/briefings/plans`
-- durable `records` plus promotion flows from issues, approvals, and runs
-
-The current sprint branch exists to finish the missing pieces across all five phases:
-
-- Phase 2: real briefing product with library, schedules, and approval-aware digest synthesis
-- Phase 3: lightweight knowledge library with record publication
-- Phase 4: portfolio board plus milestones
-- Phase 5: attribution hardening, worktree isolation, and honest cost reporting everywhere
+- `/roadmap` as the operator-facing strategy surface (backed by the existing `goals` model)
+- dashboard `System Health` diagnostics
+- company-level and agent-level manager planning modes
+- approval-gated top-level manager issue creation via `approve_manager_plan`
+- durable `records`, schedules, milestones, knowledge publication, and checkout-aware execution flows
+- a whole-repo condense audit that identifies the next safe simplification batches
+- selective upstream hardening adoption for startup, auth, adapters, and issue filtering
+- repo-local startup profiles and launch-history auditing for dual-repo workflows
+- a reusable agent runs transcript view with readable and raw modes
+- a dedicated project `Configuration` tab with explicit-save behavior
 
 ## Current branch
 
-- Working branch: `codex/all-phases-executive-sprint`
-- Baseline source branch: `development`
+- Working branch: `development`
+- Integration branch: `development`
 
 ## Immediate priorities
 
-1. Keep `DEV-DOCS/` aligned with the actual code as the sprint lands.
-2. Add missing schema/shared contracts for schedules, knowledge, milestones, and worktree checkouts.
-3. Extend the server/runtime before polishing the UI so routes and storage stay authoritative.
-4. End with full verification:
+1. Keep `DEV-DOCS/` aligned with the new startup-profile, launch-history, and runs/configuration UX behavior.
+2. Execute Batch 1 from `DEV-DOCS/CONDENSE-AUDIT.md` against the highest-risk server hotspots.
+3. Preserve the compatibility contract:
+   - internal `goals` persistence
+   - operator-facing `Roadmap` language
+4. Keep manager governance rules easy to audit in code reviews.
+5. Treat upstream adoption as selective:
+   - take correctness fixes
+   - manually adapt UX ideas
+   - defer worktree/runtime and Gemini work
+6. End with full verification for any code-changing batch:
    - `pnpm -r typecheck`
    - `pnpm test:run`
    - `pnpm build`
-   - Playwright interactive QA across the executive surfaces
 
 ## Important current truths
 
-- `/dashboard` is still the operational telemetry page.
-- `Briefings` is present, but incomplete relative to the intended five-phase roadmap.
-- There is no shipped knowledge library yet.
-- There is no shipped portfolio page yet.
-- Cost truthfulness exists on the board, but not yet across all money displays.
-- Workspace isolation is not yet implemented.
+- `/dashboard` is still the operator telemetry page, but it now also surfaces instance-level subsystem health.
+- The old Goals tab is now the Roadmap surface.
+- Managers resolve planning mode from company default plus optional agent override.
+- Approval-required managers must attach an approved `approvalId` when creating top-level issues.
+- The safe-simplification backlog is now documented in `DEV-DOCS/CONDENSE-AUDIT.md`.
+- `pnpm start` and `pnpm dev` now pin checkout-specific startup context in `.paperclip/local-start.json`.
+- Launch attempts are recorded at `<paperclipHome>/instances/<instanceId>/logs/launch-history.jsonl`.
+- `pnpm paperclipai doctor --launch-history` shows the repo-local startup profile plus recent launch records.
+- Agent detail is the primary run-analysis surface via `Dashboard / Configuration / Runs`.
+- Project detail uses a dedicated `Configuration` tab so project-level config changes can be reviewed before save.
+- `development` is the active integration branch in this workspace.
 
 ## Read next
 
 1. `DEV-DOCS/DEVELOPMENT-STATUS.md`
 2. `DEV-DOCS/01-task-list.md`
-3. `DEV-DOCS/recent-changes.md`
+3. `DEV-DOCS/ARCHITECTURE.md`
+4. `DEV-DOCS/UPSTREAM-COMPARISON-2026-03-11.md`
+5. `DEV-DOCS/CONDENSE-AUDIT.md`

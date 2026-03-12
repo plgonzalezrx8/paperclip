@@ -75,6 +75,16 @@ export function CompanySettings() {
     }
   });
 
+  const managerPlanningModeMutation = useMutation({
+    mutationFn: (mode: "automatic" | "approval_required") =>
+      companiesApi.update(selectedCompanyId!, {
+        defaultManagerPlanningMode: mode,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+    }
+  });
+
   const inviteMutation = useMutation({
     mutationFn: () =>
       accessApi.createOpenClawInvitePrompt(selectedCompanyId!),
@@ -297,13 +307,42 @@ export function CompanySettings() {
         <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           Hiring
         </div>
-        <div className="rounded-md border border-border px-4 py-3">
+        <div className="space-y-4 rounded-md border border-border px-4 py-4">
           <ToggleField
             label="Require board approval for new hires"
             hint="New agent hires stay pending until approved by board."
             checked={!!selectedCompany.requireBoardApprovalForNewAgents}
             onChange={(v) => settingsMutation.mutate(v)}
           />
+          <Field
+            label="Default manager planning mode"
+            hint="Controls whether managers can create top-level work directly or must get a plan approved first."
+          >
+            <div className="flex flex-wrap gap-2">
+              {[
+                { value: "automatic", label: "Automatic" },
+                { value: "approval_required", label: "Approval required" },
+              ].map((option) => {
+                const active = selectedCompany.defaultManagerPlanningMode === option.value;
+                return (
+                  <Button
+                    key={option.value}
+                    type="button"
+                    variant={active ? "default" : "outline"}
+                    size="sm"
+                    disabled={managerPlanningModeMutation.isPending}
+                    onClick={() =>
+                      managerPlanningModeMutation.mutate(
+                        option.value as "automatic" | "approval_required"
+                      )
+                    }
+                  >
+                    {option.label}
+                  </Button>
+                );
+              })}
+            </div>
+          </Field>
         </div>
       </div>
 

@@ -154,9 +154,9 @@ export function CommandPalette() {
             <Hexagon className="mr-2 h-4 w-4" />
             Projects
           </CommandItem>
-          <CommandItem onSelect={() => go("/goals")}>
+          <CommandItem onSelect={() => go("/roadmap")}>
             <Target className="mr-2 h-4 w-4" />
-            Goals
+            Roadmap
           </CommandItem>
           <CommandItem onSelect={() => go("/agents")}>
             <Bot className="mr-2 h-4 w-4" />

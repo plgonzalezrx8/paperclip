@@ -1,5 +1,6 @@
 import type {
   AgentAdapterType,
+  ManagerPlanningMode,
   AgentRole,
   AgentStatus,
 } from "../constants.js";
@@ -25,6 +26,8 @@ export interface Agent {
   budgetMonthlyCents: number;
   spentMonthlyCents: number;
   permissions: AgentPermissions;
+  managerPlanningModeOverride: ManagerPlanningMode | null;
+  resolvedManagerPlanningMode: ManagerPlanningMode;
   lastHeartbeatAt: Date | null;
   metadata: Record<string, unknown> | null;
   createdAt: Date;

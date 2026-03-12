@@ -273,7 +273,7 @@ export function ProjectProperties({ project, onUpdate }: ProjectPropertiesProps)
         )}
         <div className="py-1.5">
           <div className="flex items-start justify-between gap-2">
-            <span className="text-xs text-muted-foreground">Goals</span>
+            <span className="text-xs text-muted-foreground">Roadmap</span>
             <div className="flex flex-col items-end gap-1.5">
               {linkedGoals.length === 0 ? (
                 <span className="text-sm text-muted-foreground">None</span>
@@ -284,7 +284,7 @@ export function ProjectProperties({ project, onUpdate }: ProjectPropertiesProps)
                       key={goal.id}
                       className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs"
                     >
-                      <Link to={`/goals/${goal.id}`} className="hover:underline max-w-[140px] truncate">
+                      <Link to={`/roadmap/${goal.id}`} className="hover:underline max-w-[140px] truncate">
                         {goal.title}
                       </Link>
                       {onUpdate && (
@@ -311,13 +311,13 @@ export function ProjectProperties({ project, onUpdate }: ProjectPropertiesProps)
                       disabled={availableGoals.length === 0}
                     >
                       <Plus className="h-3 w-3 mr-1" />
-                      Goal
+                      Roadmap
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-56 p-1" align="end">
                     {availableGoals.length === 0 ? (
                       <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                        All goals linked.
+                        All roadmap items linked.
                       </div>
                     ) : (
                       availableGoals.map((goal) => (

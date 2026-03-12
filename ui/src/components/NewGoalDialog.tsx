@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { GOAL_STATUSES, GOAL_LEVELS } from "@paperclipai/shared";
+import { GOAL_LEVELS, GOAL_PLANNING_HORIZONS, GOAL_STATUSES } from "@paperclipai/shared";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { goalsApi } from "../api/goals";
@@ -39,13 +39,16 @@ export function NewGoalDialog() {
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [guidance, setGuidance] = useState("");
   const [status, setStatus] = useState("planned");
   const [level, setLevel] = useState("task");
+  const [planningHorizon, setPlanningHorizon] = useState("next");
   const [parentId, setParentId] = useState("");
   const [expanded, setExpanded] = useState(false);
 
   const [statusOpen, setStatusOpen] = useState(false);
   const [levelOpen, setLevelOpen] = useState(false);
+  const [planningHorizonOpen, setPlanningHorizonOpen] = useState(false);
   const [parentOpen, setParentOpen] = useState(false);
   const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
 
@@ -78,8 +81,10 @@ export function NewGoalDialog() {
   function reset() {
     setTitle("");
     setDescription("");
+    setGuidance("");
     setStatus("planned");
     setLevel("task");
+    setPlanningHorizon("next");
     setParentId("");
     setExpanded(false);
   }
@@ -89,8 +94,10 @@ export function NewGoalDialog() {
     createGoal.mutate({
       title: title.trim(),
       description: description.trim() || undefined,
+      guidance: guidance.trim() || undefined,
       status,
       level,
+      planningHorizon,
       ...(appliedParentId ? { parentId: appliedParentId } : {}),
     });
   }
@@ -128,7 +135,7 @@ export function NewGoalDialog() {
               </span>
             )}
             <span className="text-muted-foreground/60">&rsaquo;</span>
-            <span>{newGoalDefaults.parentId ? "New sub-goal" : "New goal"}</span>
+            <span>{newGoalDefaults.parentId ? "New roadmap sub-item" : "New roadmap item"}</span>
           </div>
           <div className="flex items-center gap-1">
             <Button
@@ -154,7 +161,7 @@ export function NewGoalDialog() {
         <div className="px-4 pt-4 pb-2 shrink-0">
           <input
             className="w-full text-lg font-semibold bg-transparent outline-none placeholder:text-muted-foreground/50"
-            placeholder="Goal title"
+            placeholder="Roadmap item title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => {
@@ -176,6 +183,20 @@ export function NewGoalDialog() {
             placeholder="Add description..."
             bordered={false}
             contentClassName={cn("text-sm text-muted-foreground", expanded ? "min-h-[220px]" : "min-h-[120px]")}
+            imageUploadHandler={async (file) => {
+              const asset = await uploadDescriptionImage.mutateAsync(file);
+              return asset.contentPath;
+            }}
+          />
+        </div>
+
+        <div className="px-4 pb-2">
+          <MarkdownEditor
+            value={guidance}
+            onChange={setGuidance}
+            placeholder="Manager guidance: what should leaders do with this roadmap item?"
+            bordered={false}
+            contentClassName="min-h-[72px] text-sm text-muted-foreground"
             imageUploadHandler={async (file) => {
               const asset = await uploadDescriptionImage.mutateAsync(file);
               return asset.contentPath;
@@ -232,12 +253,37 @@ export function NewGoalDialog() {
             </PopoverContent>
           </Popover>
 
+          <Popover open={planningHorizonOpen} onOpenChange={setPlanningHorizonOpen}>
+            <PopoverTrigger asChild>
+              <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors capitalize">
+                {planningHorizon}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-40 p-1" align="start">
+              {GOAL_PLANNING_HORIZONS.map((horizon) => (
+                <button
+                  key={horizon}
+                  className={cn(
+                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 capitalize",
+                    horizon === planningHorizon && "bg-accent"
+                  )}
+                  onClick={() => {
+                    setPlanningHorizon(horizon);
+                    setPlanningHorizonOpen(false);
+                  }}
+                >
+                  {horizon}
+                </button>
+              ))}
+            </PopoverContent>
+          </Popover>
+
           {/* Parent goal */}
           <Popover open={parentOpen} onOpenChange={setParentOpen}>
             <PopoverTrigger asChild>
               <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
                 <Target className="h-3 w-3 text-muted-foreground" />
-                {currentParent ? currentParent.title : "Parent goal"}
+                {currentParent ? currentParent.title : "Parent roadmap item"}
               </button>
             </PopoverTrigger>
             <PopoverContent className="w-48 p-1" align="start">
@@ -273,7 +319,7 @@ export function NewGoalDialog() {
             disabled={!title.trim() || createGoal.isPending}
             onClick={handleSubmit}
           >
-            {createGoal.isPending ? "Creating…" : newGoalDefaults.parentId ? "Create sub-goal" : "Create goal"}
+            {createGoal.isPending ? "Creating…" : newGoalDefaults.parentId ? "Create sub-item" : "Create roadmap item"}
           </Button>
         </div>
       </DialogContent>

@@ -5,6 +5,7 @@ import { dashboardApi } from "../api/dashboard";
 import { activityApi } from "../api/activity";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
+import { healthApi } from "../api/health";
 import { projectsApi } from "../api/projects";
 import { heartbeatsApi } from "../api/heartbeats";
 import { useCompany } from "../context/CompanyContext";
@@ -23,6 +24,7 @@ import { Bot, CircleDot, DollarSign, ShieldCheck, LayoutDashboard } from "lucide
 import { ActiveAgentsPanel } from "../components/ActiveAgentsPanel";
 import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { SystemHealthSection } from "../components/SystemHealthSection";
 import type { Agent, Issue } from "@paperclipai/shared";
 
 function getRecentIssues(issues: Issue[]): Issue[] {
@@ -76,6 +78,18 @@ export function Dashboard() {
   const { data: runs } = useQuery({
     queryKey: queryKeys.heartbeats(selectedCompanyId!),
     queryFn: () => heartbeatsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const {
+    data: subsystemHealth,
+    error: subsystemHealthError,
+    isLoading: subsystemHealthLoading,
+    isRefetching: subsystemHealthRefetching,
+    refetch: refetchSubsystemHealth,
+  } = useQuery({
+    queryKey: queryKeys.healthSubsystems(selectedCompanyId!),
+    queryFn: () => healthApi.subsystems(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
@@ -206,6 +220,16 @@ export function Dashboard() {
       )}
 
       <ActiveAgentsPanel companyId={selectedCompanyId!} />
+
+      <SystemHealthSection
+        data={subsystemHealth}
+        error={subsystemHealthError instanceof Error ? subsystemHealthError : null}
+        isLoading={subsystemHealthLoading}
+        isRefetching={subsystemHealthRefetching}
+        onRefresh={() => {
+          void refetchSubsystemHealth();
+        }}
+      />
 
       {data && (
         <>

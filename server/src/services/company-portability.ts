@@ -10,6 +10,7 @@ import type {
   CompanyPortabilityImportResult,
   CompanyPortabilityInclude,
   CompanyPortabilityManifest,
+  ManagerPlanningMode,
   CompanyPortabilityPreview,
   CompanyPortabilityPreviewAgentPlan,
   CompanyPortabilityPreviewResult,
@@ -29,6 +30,15 @@ const DEFAULT_COLLISION_STRATEGY: CompanyPortabilityCollisionStrategy = "rename"
 
 const SENSITIVE_ENV_KEY_RE =
   /(api[-_]?key|access[-_]?token|auth(?:_?token)?|authorization|bearer|secret|passwd|password|credential|jwt|private[-_]?key|cookie|connectionstring)/i;
+
+function normalizeManagerPlanningMode(
+  value: string | null | undefined,
+): ManagerPlanningMode | null {
+  if (value === "automatic" || value === "approval_required") {
+    return value;
+  }
+  return null;
+}
 
 type ResolvedSource = {
   manifest: CompanyPortabilityManifest;
@@ -598,6 +608,7 @@ export function companyPortabilityService(db: Db) {
           description: company.description ?? null,
           brandColor: company.brandColor ?? null,
           requireBoardApprovalForNewAgents: company.requireBoardApprovalForNewAgents,
+          defaultManagerPlanningMode: company.defaultManagerPlanningMode,
         },
         renderCompanyAgentsSection(companyAgentSummaries),
       );
@@ -607,6 +618,8 @@ export function companyPortabilityService(db: Db) {
         description: company.description ?? null,
         brandColor: company.brandColor ?? null,
         requireBoardApprovalForNewAgents: company.requireBoardApprovalForNewAgents,
+        defaultManagerPlanningMode:
+          normalizeManagerPlanningMode(company.defaultManagerPlanningMode) ?? "automatic",
       };
     }
 
@@ -653,6 +666,7 @@ export function companyPortabilityService(db: Db) {
             reportsTo: reportsToSlug,
             runtimeConfig: portableRuntimeConfig,
             permissions: portablePermissions,
+            managerPlanningModeOverride: agent.managerPlanningModeOverride ?? null,
             adapterConfig: portableAdapterConfig,
             requiredSecrets: agentRequiredSecrets,
           },
@@ -672,6 +686,7 @@ export function companyPortabilityService(db: Db) {
           adapterConfig: portableAdapterConfig,
           runtimeConfig: portableRuntimeConfig,
           permissions: portablePermissions,
+          managerPlanningModeOverride: normalizeManagerPlanningMode(agent.managerPlanningModeOverride),
           budgetMonthlyCents: agent.budgetMonthlyCents ?? 0,
           metadata: (agent.metadata as Record<string, unknown> | null) ?? null,
         });
@@ -856,6 +871,9 @@ export function companyPortabilityService(db: Db) {
         requireBoardApprovalForNewAgents: include.company
           ? (sourceManifest.company?.requireBoardApprovalForNewAgents ?? true)
           : true,
+        defaultManagerPlanningMode: include.company
+          ? (sourceManifest.company?.defaultManagerPlanningMode ?? "automatic")
+          : "automatic",
       });
       await access.ensureMembership(created.id, "user", actorUserId ?? "board", "owner", "active");
       targetCompany = created;
@@ -869,6 +887,7 @@ export function companyPortabilityService(db: Db) {
           description: sourceManifest.company.description,
           brandColor: sourceManifest.company.brandColor,
           requireBoardApprovalForNewAgents: sourceManifest.company.requireBoardApprovalForNewAgents,
+          defaultManagerPlanningMode: sourceManifest.company.defaultManagerPlanningMode,
         });
         targetCompany = updated ?? targetCompany;
         companyAction = "updated";
@@ -922,6 +941,7 @@ export function companyPortabilityService(db: Db) {
           runtimeConfig: manifestAgent.runtimeConfig,
           budgetMonthlyCents: manifestAgent.budgetMonthlyCents,
           permissions: manifestAgent.permissions,
+          managerPlanningModeOverride: manifestAgent.managerPlanningModeOverride ?? null,
           metadata: manifestAgent.metadata,
         };
 

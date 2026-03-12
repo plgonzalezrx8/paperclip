@@ -16,6 +16,7 @@ export { recordService, type RecordFilters } from "./records.js";
 export { knowledgeService } from "./knowledge.js";
 export { accessService } from "./access.js";
 export { companyPortabilityService } from "./company-portability.js";
+export { subsystemHealthService } from "./subsystem-health.js";
 export { logActivity, type LogActivityInput } from "./activity-log.js";
 export { notifyHireApproved, type NotifyHireApprovedInput } from "./hire-hook.js";
 export { publishLiveEvent, subscribeCompanyLiveEvents } from "./live-events.js";

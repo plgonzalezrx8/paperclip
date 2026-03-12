@@ -1,4 +1,4 @@
-import type { CompanyStatus } from "../constants.js";
+import type { CompanyStatus, ManagerPlanningMode } from "../constants.js";
 
 export interface Company {
   id: string;
@@ -10,6 +10,7 @@ export interface Company {
   budgetMonthlyCents: number;
   spentMonthlyCents: number;
   requireBoardApprovalForNewAgents: boolean;
+  defaultManagerPlanningMode: ManagerPlanningMode;
   brandColor: string | null;
   createdAt: Date;
   updatedAt: Date;

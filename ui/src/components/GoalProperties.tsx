@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import type { Goal } from "@paperclipai/shared";
-import { GOAL_STATUSES, GOAL_LEVELS } from "@paperclipai/shared";
+import { GOAL_LEVELS, GOAL_PLANNING_HORIZONS, GOAL_STATUSES } from "@paperclipai/shared";
 import { agentsApi } from "../api/agents";
 import { goalsApi } from "../api/goals";
 import { useCompany } from "../context/CompanyContext";
@@ -124,6 +124,33 @@ export function GoalProperties({ goal, onUpdate }: GoalPropertiesProps) {
           )}
         </PropertyRow>
 
+        <PropertyRow label="Horizon">
+          {onUpdate ? (
+            <PickerButton
+              current={goal.planningHorizon}
+              options={GOAL_PLANNING_HORIZONS}
+              onChange={(planningHorizon) => onUpdate({ planningHorizon })}
+            >
+              <span className="text-sm capitalize">{goal.planningHorizon}</span>
+            </PickerButton>
+          ) : (
+            <span className="text-sm capitalize">{goal.planningHorizon}</span>
+          )}
+        </PropertyRow>
+
+        <PropertyRow label="Order">
+          {onUpdate ? (
+            <input
+              type="number"
+              value={goal.sortOrder}
+              onChange={(event) => onUpdate({ sortOrder: Number(event.target.value) || 0 })}
+              className="w-20 rounded-md border border-border bg-transparent px-2 py-1 text-sm outline-none"
+            />
+          ) : (
+            <span className="text-sm">{goal.sortOrder}</span>
+          )}
+        </PropertyRow>
+
         <PropertyRow label="Owner">
           {ownerAgent ? (
             <Link
@@ -138,9 +165,9 @@ export function GoalProperties({ goal, onUpdate }: GoalPropertiesProps) {
         </PropertyRow>
 
         {goal.parentId && (
-          <PropertyRow label="Parent Goal">
+          <PropertyRow label="Parent">
             <Link
-              to={`/goals/${goal.parentId}`}
+              to={`/roadmap/${goal.parentId}`}
               className="text-sm hover:underline"
             >
               {parentGoal?.title ?? goal.parentId.slice(0, 8)}

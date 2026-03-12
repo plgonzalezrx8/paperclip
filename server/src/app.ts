@@ -35,6 +35,7 @@ export async function createApp(
   opts: {
     uiMode: UiMode;
     storageService: StorageService;
+    databaseConnectionString?: string | null;
     deploymentMode: DeploymentMode;
     deploymentExposure: DeploymentExposure;
     allowedHostnames: string[];
@@ -96,6 +97,7 @@ export async function createApp(
   api.use(
     "/health",
     healthRoutes(db, {
+      databaseConnectionString: opts.databaseConnectionString ?? null,
       deploymentMode: opts.deploymentMode,
       deploymentExposure: opts.deploymentExposure,
       authReady: opts.authReady,

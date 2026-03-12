@@ -1,9 +1,40 @@
 # Task List
 
-Last updated: 2026-03-09
+Last updated: 2026-03-10
 
 ## Done
 
+- Add deep DEV-DOCS reference docs for:
+  - infrastructure
+  - cross-subsystem interaction map
+- Produce a whole-repo condense audit:
+  - scored hotspot inventory
+  - five-batch simplification backlog
+  - docs overlap map
+  - do-not-condense guidance for canonical contracts
+- Turn the old Goals surface into the roadmap layer:
+  - `/roadmap` UI routes
+  - legacy `/goals*` redirects
+  - roadmap API aliases over the existing goal service
+  - roadmap guidance, horizon, and ordering fields
+- Add operator-facing health diagnostics:
+  - subsystem health service
+  - `/api/health/subsystems`
+  - dashboard `System Health` section
+- Add manager planning governance:
+  - company default planning mode
+  - agent override planning mode
+  - resolved planning mode in agent reads
+  - `approve_manager_plan` approval support
+  - top-level issue creation enforcement via `approvalId`
+- Add automated coverage for:
+  - roadmap aliases
+  - subsystem health service and route
+  - manager-plan approval wakeups
+  - manager planning mode resolution
+  - approval-required issue creation
+  - new roadmap/health/planning-mode UI rendering
+- Add detailed `DEV-DOCS/ARCHITECTURE.md`
 - Ship the first executive record layer:
   - `records`, `record_links`, `record_attachments`, `briefing_view_states`
   - `/briefings/board`, `/briefings/results`, `/briefings/plans`
@@ -37,6 +68,11 @@ Last updated: 2026-03-09
   - normalize `knowledge` company routing
   - avoid misleading schedule defaults while record detail is still loading
 - Add logical checkout release semantics when an issue is released, reassigned, or leaves active execution
+- Move CI to a development-first branch model:
+  - PR policy on `development`
+  - PR verify on `development`
+  - promotion verify on `master`
+  - lockfile refresh bot on `development`
 
 ## Partial
 
@@ -48,21 +84,34 @@ Last updated: 2026-03-09
 
 ## Next
 
+- Execute Batch 1 from `DEV-DOCS/CONDENSE-AUDIT.md`:
+  - `server/src/routes/access.ts`
+  - `server/src/services/heartbeat.ts`
+  - `server/src/routes/issues.ts`
+  - `server/src/routes/agents.ts`
+  - `server/src/services/issues.ts`
+  - `server/src/services/company-portability.ts`
+- Add status banners or an index for historical docs under `doc/plans/` and `doc/plan/`
+- Do browser QA on:
+  - dashboard health section
+  - roadmap list/detail flows
+  - company settings planning mode controls
+  - agent create/edit planning mode controls
 - Tighten checkout lifecycle semantics:
   - release/archive rules
   - cleanup policy
   - operator visibility when a checkout becomes stale
 - Sweep remaining attribution paths to ensure every executive mutation carries consistent actor metadata
-- Extend pricing-state treatment into any remaining historical cost surface that still assumes exact dollars
-- Decide whether briefing delivery stays in-app only or expands into Slack/email/webhook delivery
+- Decide whether roadmap-aware manager guidance should also be seeded into default agent instructions/templates
 
 ## Later
 
+- Execute Batch 2 through Batch 5 from `DEV-DOCS/CONDENSE-AUDIT.md`
 - External delivery for briefings and alerts
   - Slack
   - email
   - Discord
   - webhooks beyond current event layer
 - richer knowledge retrieval/search
-- automated plan-to-issue decomposition
+- automated plan-to-issue decomposition beyond the current approval-governed manager-plan path
 - broader multi-operator governance beyond current board model

@@ -3,6 +3,7 @@ import {
   pgTable,
   uuid,
   text,
+  integer,
   timestamp,
   index,
 } from "drizzle-orm/pg-core";
@@ -18,6 +19,9 @@ export const goals = pgTable(
     description: text("description"),
     level: text("level").notNull().default("task"),
     status: text("status").notNull().default("planned"),
+    guidance: text("guidance"),
+    planningHorizon: text("planning_horizon").notNull().default("next"),
+    sortOrder: integer("sort_order").notNull().default(0),
     parentId: uuid("parent_id").references((): AnyPgColumn => goals.id),
     ownerAgentId: uuid("owner_agent_id").references(() => agents.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
