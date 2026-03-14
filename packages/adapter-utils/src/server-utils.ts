@@ -123,6 +123,43 @@ export function buildPaperclipEnv(agent: { id: string; companyId: string }): Rec
   return vars;
 }
 
+function firstNonEmptyEnvValue(env: Record<string, string>, key: string) {
+  const value = env[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+// Surface the runtime contract that Paperclip injects into local coding agents so
+// repo-backed runs know which checkout they own and how to hand work back for review.
+export function renderPaperclipRuntimeNote(env: Record<string, string>): string {
+  const paperclipKeys = Object.keys(env)
+    .filter((key) => key.startsWith("PAPERCLIP_"))
+    .sort();
+  if (paperclipKeys.length === 0) return "";
+
+  const checkoutId = firstNonEmptyEnvValue(env, "PAPERCLIP_WORKSPACE_CHECKOUT_ID");
+  const branchName = firstNonEmptyEnvValue(env, "PAPERCLIP_WORKSPACE_BRANCH");
+  const repoUrl = firstNonEmptyEnvValue(env, "PAPERCLIP_WORKSPACE_REPO_URL");
+
+  const lines = [
+    "Paperclip runtime note:",
+    `The following PAPERCLIP_* environment variables are available in this run: ${paperclipKeys.join(", ")}`,
+    "Do not assume these variables are missing without checking your shell environment.",
+  ];
+
+  if (checkoutId || branchName || repoUrl) {
+    lines.push(
+      "",
+      "Repo-backed review handoff note:",
+      `This run is attached to the current Paperclip workspace checkout${checkoutId ? ` (${checkoutId})` : ""}${branchName ? ` on branch ${branchName}` : ""}.`,
+      "If you finish repo-backed work, keep your changes on this checkout branch, then create a commit, push it, and open a pull request before marking the task done or in review.",
+      "When you hand the task back through the Paperclip issue API, include reviewSubmission with checkoutId, branchName, headCommitSha, pullRequestUrl, and optional remoteBranchName, pullRequestNumber, and pullRequestTitle.",
+    );
+  }
+
+  lines.push("", "");
+  return lines.join("\n");
+}
+
 export function defaultPathForPlatform() {
   if (process.platform === "win32") {
     return "C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem";

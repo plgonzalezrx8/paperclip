@@ -12,6 +12,7 @@ import {
   parseObject,
   parseJson,
   buildPaperclipEnv,
+  renderPaperclipRuntimeNote,
   redactEnvForLogs,
   ensureAbsoluteDirectory,
   ensureCommandResolvable,
@@ -116,6 +117,8 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
   const workspaceCwd = asString(workspaceContext.cwd, "");
   const workspaceSource = asString(workspaceContext.source, "");
   const workspaceId = asString(workspaceContext.workspaceId, "") || null;
+  const workspaceCheckoutId = asString(workspaceContext.checkoutId, "") || null;
+  const workspaceBranch = asString(workspaceContext.branchName, "") || null;
   const workspaceRepoUrl = asString(workspaceContext.repoUrl, "") || null;
   const workspaceRepoRef = asString(workspaceContext.repoRef, "") || null;
   const workspaceHints = Array.isArray(context.paperclipWorkspaces)
@@ -185,6 +188,12 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
   }
   if (workspaceId) {
     env.PAPERCLIP_WORKSPACE_ID = workspaceId;
+  }
+  if (workspaceCheckoutId) {
+    env.PAPERCLIP_WORKSPACE_CHECKOUT_ID = workspaceCheckoutId;
+  }
+  if (workspaceBranch) {
+    env.PAPERCLIP_WORKSPACE_BRANCH = workspaceBranch;
   }
   if (workspaceRepoUrl) {
     env.PAPERCLIP_WORKSPACE_REPO_URL = workspaceRepoUrl;
@@ -340,6 +349,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     run: { id: runId, source: "on_demand" },
     context,
   });
+  const promptWithRuntimeNote = `${renderPaperclipRuntimeNote(env)}${prompt}`;
 
   const buildClaudeArgs = (resumeSessionId: string | null) => {
     const args = ["--print", "-", "--output-format", "stream-json", "--verbose"];
@@ -383,7 +393,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         commandArgs: args,
         commandNotes,
         env: redactEnvForLogs(env),
-        prompt,
+        prompt: promptWithRuntimeNote,
         context,
       });
     }
@@ -391,7 +401,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const proc = await runChildProcess(runId, command, args, {
       cwd,
       env,
-      stdin: prompt,
+      stdin: promptWithRuntimeNote,
       timeoutSec,
       graceSec,
       onLog,

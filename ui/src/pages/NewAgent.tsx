@@ -41,6 +41,7 @@ function createValuesForAdapterType(
   const nextValues: CreateConfigValues = { ...defaults, adapterType };
   if (adapterType === "codex_local") {
     nextValues.model = DEFAULT_CODEX_LOCAL_MODEL;
+    nextValues.search = true;
     nextValues.dangerouslyBypassSandbox =
       DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX;
   } else if (adapterType === "cursor") {

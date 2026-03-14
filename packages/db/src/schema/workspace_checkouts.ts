@@ -1,4 +1,4 @@
-import { index, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { index, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
 import { companies } from "./companies.js";
 import { heartbeatRuns } from "./heartbeat_runs.js";
@@ -17,9 +17,15 @@ export const workspaceCheckouts = pgTable(
     lastRunId: uuid("last_run_id").references(() => heartbeatRuns.id, { onDelete: "set null" }),
     branchName: text("branch_name"),
     worktreePath: text("worktree_path"),
+    headCommitSha: text("head_commit_sha"),
+    remoteBranchName: text("remote_branch_name"),
+    pullRequestUrl: text("pull_request_url"),
+    pullRequestNumber: integer("pull_request_number"),
+    pullRequestTitle: text("pull_request_title"),
     status: text("status").notNull().default("active"),
     baseRef: text("base_ref"),
     releasedAt: timestamp("released_at", { withTimezone: true }),
+    submittedForReviewAt: timestamp("submitted_for_review_at", { withTimezone: true }),
     metadata: jsonb("metadata").$type<Record<string, unknown> | null>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

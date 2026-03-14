@@ -65,6 +65,8 @@ pnpm paperclipai doctor --launch-history
 
 If startup says dependencies are incomplete, rerun `pnpm install`. If the problem persists, remove `node_modules` and reinstall once.
 
+Generated env files such as the adjacent agent-JWT `.env` now quote special-character values automatically, so spaces, `#`, and quotes round-trip safely.
+
 ## Start Dev
 
 From repo root:
@@ -86,6 +88,26 @@ This starts:
 - UI: served by the API server in dev middleware mode (same origin as API)
 
 `pnpm dev` runs the server in watch mode and restarts on changes from workspace packages (including adapter packages). Use `pnpm dev:once` to run without file watching.
+
+## Issue Assignment Shortcuts
+
+Operator-facing issue surfaces now support both agent and user assignees cleanly.
+
+- `Me` assigns or filters to the currently authenticated board user.
+- `No assignee` clears both `assigneeAgentId` and `assigneeUserId`.
+- `Assign to requester` stays available when the requester is different from the current board user.
+- User assignees render as `Me`, `Board`, or a short stable id for other users.
+
+This applies to list filters, assignee grouping, row-level assignment popovers, and issue detail properties.
+
+## New Issue Keyboard Flow
+
+The new issue dialog keeps keyboard-first behavior while avoiding unnecessary stops on prefilled fields.
+
+- `Tab` from the title field jumps to the next empty field.
+- If assignee and project are both already prefilled, `Tab` jumps straight to the description editor.
+- User assignee selections now persist through local draft restore the same way agent assignees do.
+- Recent-assignee tracking still applies only to agent selections.
 
 Tailscale/private-auth dev mode:
 
@@ -170,6 +192,66 @@ When a local agent run has no resolved project/session workspace, Paperclip fall
 - default example when nothing is pinned: `~/.paperclip/instances/default/workspaces/<agent-id>`
 
 This path honors `PAPERCLIP_HOME` and `PAPERCLIP_INSTANCE_ID` in non-default setups.
+
+## Repo Worktree Bootstrap
+
+Repo-backed project workspaces now hydrate Node dependencies inside each isolated issue worktree before the agent run starts.
+
+- Bootstrap runs only when the checkout contains `package.json`.
+- Lockfiles are detected in this order:
+  - `pnpm-lock.yaml`
+  - `package-lock.json`
+  - `npm-shrinkwrap.json`
+  - `yarn.lock`
+  - `bun.lock`
+  - `bun.lockb`
+- Install commands:
+  - `pnpm install --frozen-lockfile`
+  - `npm ci`
+  - `yarn install --frozen-lockfile`
+  - `bun install --frozen-lockfile`
+- Paperclip skips the reinstall when `node_modules` is already present and the saved lockfile hash / install command still match the checkout metadata.
+- If the required package manager is missing or install fails, the run fails early with a workspace bootstrap error instead of continuing into missing-module TypeScript noise.
+
+The bootstrap state is stored on the active `workspace_checkouts.metadata.workspaceBootstrap` record so operators can inspect what happened on a given checkout.
+
+## Repo Review Handoff
+
+Repo-backed issue runs now expose additional environment variables to local adapters:
+
+- `PAPERCLIP_WORKSPACE_CWD`
+- `PAPERCLIP_WORKSPACE_CHECKOUT_ID`
+- `PAPERCLIP_WORKSPACE_BRANCH`
+- `PAPERCLIP_WORKSPACE_REPO_URL`
+- `PAPERCLIP_WORKSPACE_REPO_REF`
+
+When an agent finishes repo-backed work, the expected handoff is:
+
+1. commit on the isolated checkout branch
+2. push that branch
+3. open a pull request
+4. update the issue to `in_review` or `done` with a `comment` and `reviewSubmission`
+
+`reviewSubmission` includes:
+
+- `checkoutId`
+- `branchName`
+- `headCommitSha`
+- `pullRequestUrl`
+- optional `remoteBranchName`
+- optional `pullRequestNumber`
+- optional `pullRequestTitle`
+
+Paperclip persists that PR metadata on the workspace checkout and appends it to the review handoff comment for the manager/creator/project lead reviewer.
+
+## Run Logs and Events
+
+Heartbeat runs now keep both layers of observability:
+
+- full raw stdout/stderr chunks in the NDJSON run log store
+- structured `heartbeat_run_events` rows derived from machine-readable adapter stdout when available
+
+For supported local adapters (`codex_local`, `claude_local`, `cursor`, `opencode_local`, and `pi_local`), Paperclip persists assistant output, reasoning, tool calls/results, command execution events, adapter session/result events, and stderr lines as structured run events. The UI prefers these structured events for transcripts and the Events panel, while older runs still fall back to raw log parsing.
 
 ## Quick Health Checks
 

@@ -51,7 +51,7 @@ function createAgent(overrides: Partial<Agent> = {}): Agent {
     runtimeConfig: {},
     budgetMonthlyCents: 0,
     spentMonthlyCents: 0,
-    permissions: { canCreateAgents: false },
+    permissions: { canCreateAgents: false, canAssignTasks: true },
     managerPlanningModeOverride: null,
     resolvedManagerPlanningMode: "approval_required",
     lastHeartbeatAt: null,

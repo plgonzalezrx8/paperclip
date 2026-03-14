@@ -59,6 +59,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (typeof workspaceContext.workspaceId === "string" && workspaceContext.workspaceId.trim().length > 0) {
     env.PAPERCLIP_WORKSPACE_ID = workspaceContext.workspaceId.trim();
   }
+  if (typeof workspaceContext.checkoutId === "string" && workspaceContext.checkoutId.trim().length > 0) {
+    env.PAPERCLIP_WORKSPACE_CHECKOUT_ID = workspaceContext.checkoutId.trim();
+  }
+  if (typeof workspaceContext.branchName === "string" && workspaceContext.branchName.trim().length > 0) {
+    env.PAPERCLIP_WORKSPACE_BRANCH = workspaceContext.branchName.trim();
+  }
   if (typeof workspaceContext.repoUrl === "string" && workspaceContext.repoUrl.trim().length > 0) {
     env.PAPERCLIP_WORKSPACE_REPO_URL = workspaceContext.repoUrl.trim();
   }

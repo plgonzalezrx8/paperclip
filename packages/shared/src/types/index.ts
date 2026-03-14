@@ -16,6 +16,7 @@ export type { Project, ProjectGoalRef, ProjectWorkspace, ProjectMilestone, Works
 export type {
   Issue,
   IssueAssigneeAdapterOverrides,
+  IssueReviewSubmission,
   IssueComment,
   IssueAncestor,
   IssueAncestorProject,

@@ -317,14 +317,14 @@ export function ProjectDetail() {
     }
   };
 
-  const configurationDraft = useMemo(
-    () => ({
-      ...project,
-      ...projectConfigPatch,
-      ...(Object.prototype.hasOwnProperty.call(projectConfigPatch, "goalIds") ? { goals: [] } : null),
-    }),
-    [project, projectConfigPatch],
-  );
+  // Keep this as a plain derived object instead of another hook. ProjectDetail
+  // returns early while the project query is loading, so adding hooks below that
+  // guard can break hook ordering between the loading and loaded renders.
+  const configurationDraft = {
+    ...project,
+    ...projectConfigPatch,
+    ...(Object.prototype.hasOwnProperty.call(projectConfigPatch, "goalIds") ? { goals: [] } : null),
+  };
   const hasConfigChanges = Object.keys(projectConfigPatch).length > 0;
 
   return (

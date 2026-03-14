@@ -1,3 +1,5 @@
+import os from "node:os";
+
 const SECRET_PAYLOAD_KEY_RE =
   /(api[-_]?key|access[-_]?token|auth(?:_?token)?|authorization|bearer|secret|passwd|password|credential|jwt|private[-_]?key|cookie|connectionstring)/i;
 const JWT_VALUE_RE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?$/;
@@ -7,6 +9,19 @@ const SENSITIVE_TEXT_JSON_RE =
   /(["'](?:[^"'\n]*(?:api[-_]?key|access[-_]?token|auth(?:_?token)?|authorization|bearer|secret|passwd|password|credential|jwt|private[-_]?key|cookie|connectionstring)[^"'\n]*)["']\s*:\s*["'])([^"'\n]+)(["'])/gi;
 const SENSITIVE_TEXT_BEARER_RE = /(Authorization\s*:\s*Bearer\s+)([^\s"'`]+)/gi;
 export const REDACTED_EVENT_VALUE = "***REDACTED***";
+const HOME_DIR_CANDIDATES = Array.from(
+  new Set(
+    [os.homedir(), process.env.HOME, process.env.USERPROFILE]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0),
+  ),
+);
+const CURRENT_USERNAME = (() => {
+  try {
+    return os.userInfo().username.trim() || null;
+  } catch {
+    return null;
+  }
+})();
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
@@ -34,10 +49,14 @@ function isPlainBinding(value: unknown): value is { type: "plain"; value: unknow
   return value.type === "plain" && "value" in value;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export function redactSensitiveText(value: string): string {
   // Transcript payloads are often plain text, so secret-bearing substrings need
   // redaction even when the surrounding payload shape is otherwise harmless.
-  return value
+  let redacted = value
     .replace(
       SENSITIVE_TEXT_ASSIGNMENT_RE,
       (_match, prefix: string, key: string) => `${prefix}${key}=${REDACTED_EVENT_VALUE}`,
@@ -48,6 +67,30 @@ export function redactSensitiveText(value: string): string {
         `${prefix}${REDACTED_EVENT_VALUE}${suffix}`,
     )
     .replace(SENSITIVE_TEXT_BEARER_RE, `$1${REDACTED_EVENT_VALUE}`);
+
+  // Keep operator-facing logs readable by collapsing the local home directory
+  // into a shell-style hint instead of exposing the machine-specific path.
+  for (const homeDir of HOME_DIR_CANDIDATES) {
+    // Match only complete home directory roots (followed by slash or end),
+    // so sibling paths like `/Users/alice2` are not rewritten to `~2`.
+    const variants = new Set<string>(
+      [homeDir.replace(/[\\/]+$/g, ""), homeDir.replace(/\\/g, "/").replace(/\/+$/g, "")]
+        .filter((entry) => entry.length > 0),
+    );
+    for (const variant of variants) {
+      const escaped = escapeRegExp(variant);
+      // Treat punctuation/whitespace as valid path boundaries while still
+      // rejecting sibling segments like `/Users/alice2`.
+      redacted = redacted.replace(new RegExp(`${escaped}(?![A-Za-z0-9._-])`, "g"), "~");
+    }
+  }
+
+  if (CURRENT_USERNAME) {
+    const escaped = escapeRegExp(CURRENT_USERNAME);
+    redacted = redacted.replace(new RegExp(`\\b${escaped}\\b`, "g"), "current-user");
+  }
+
+  return redacted;
 }
 
 function sanitizeString(value: string): string {

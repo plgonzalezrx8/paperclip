@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { promisify } from "node:util";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
@@ -27,6 +28,7 @@ import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } fr
 import { secretService } from "./secrets.js";
 import { resolveDefaultAgentCheckoutDir, resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
 import { summarizeHeartbeatRunResultJson } from "./heartbeat-run-summary.js";
+import { parseStructuredStdoutLine, stderrChunkToRunEvents } from "./run-transcript-events.js";
 
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
@@ -35,7 +37,79 @@ const DEFERRED_WAKE_CONTEXT_KEY = "_paperclipWakeContext";
 const startLocksByAgent = new Map<string, Promise<void>>();
 const REPO_ONLY_CWD_SENTINEL = "/__paperclip_repo_only__";
 const GIT_COMMAND_TIMEOUT_MS = 20_000;
+const WORKSPACE_BOOTSTRAP_TIMEOUT_MS = 10 * 60 * 1000;
 const execFileAsync = promisify(execFile);
+
+type NodeWorkspaceBootstrapConfig = {
+  lockfile: string;
+  packageManager: string;
+  installArgs: string[];
+  installCommand: string;
+};
+
+export type ResolvedNodeWorkspaceBootstrap = NodeWorkspaceBootstrapConfig & {
+  lockfilePath: string;
+  lockfileSha256: string;
+};
+
+type WorkspaceBootstrapState = {
+  packageManager: string;
+  installCommand: string;
+  lockfilePath: string;
+  lockfileSha256: string;
+  installedAt?: string;
+  status: "succeeded" | "failed";
+  error?: string;
+};
+
+const NODE_WORKSPACE_BOOTSTRAP_CONFIGS: NodeWorkspaceBootstrapConfig[] = [
+  {
+    lockfile: "pnpm-lock.yaml",
+    packageManager: "pnpm",
+    installArgs: ["install", "--frozen-lockfile"],
+    installCommand: "pnpm install --frozen-lockfile",
+  },
+  {
+    lockfile: "package-lock.json",
+    packageManager: "npm",
+    installArgs: ["ci"],
+    installCommand: "npm ci",
+  },
+  {
+    lockfile: "npm-shrinkwrap.json",
+    packageManager: "npm",
+    installArgs: ["ci"],
+    installCommand: "npm ci",
+  },
+  {
+    lockfile: "yarn.lock",
+    packageManager: "yarn",
+    installArgs: ["install", "--frozen-lockfile"],
+    installCommand: "yarn install --frozen-lockfile",
+  },
+  {
+    lockfile: "bun.lock",
+    packageManager: "bun",
+    installArgs: ["install", "--frozen-lockfile"],
+    installCommand: "bun install --frozen-lockfile",
+  },
+  {
+    lockfile: "bun.lockb",
+    packageManager: "bun",
+    installArgs: ["install", "--frozen-lockfile"],
+    installCommand: "bun install --frozen-lockfile",
+  },
+];
+
+class WorkspaceBootstrapError extends Error {
+  code: string;
+
+  constructor(message: string, code = "workspace_bootstrap_failed") {
+    super(message);
+    this.name = "WorkspaceBootstrapError";
+    this.code = code;
+  }
+}
 
 function appendExcerpt(prev: string, chunk: string) {
   return appendWithCap(prev, chunk, MAX_EXCERPT_BYTES);
@@ -115,6 +189,75 @@ async function runGitCommand(cwd: string, args: string[]) {
     timeout: GIT_COMMAND_TIMEOUT_MS,
   });
   return result.stdout.trim();
+}
+
+function sha256(value: string | Buffer) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function parseCheckoutMetadata(value: unknown): Record<string, unknown> {
+  return parseObject(value);
+}
+
+async function pathExists(targetPath: string) {
+  return fs
+    .stat(targetPath)
+    .then(() => true)
+    .catch(() => false);
+}
+
+export async function resolveNodeWorkspaceBootstrap(
+  worktreePath: string,
+): Promise<ResolvedNodeWorkspaceBootstrap | null> {
+  const packageJsonPath = path.join(worktreePath, "package.json");
+  if (!(await pathExists(packageJsonPath))) {
+    return null;
+  }
+
+  for (const candidate of NODE_WORKSPACE_BOOTSTRAP_CONFIGS) {
+    const lockfilePath = path.join(worktreePath, candidate.lockfile);
+    const lockfileBuffer = await fs.readFile(lockfilePath).catch(() => null);
+    if (!lockfileBuffer) continue;
+    return {
+      ...candidate,
+      lockfilePath,
+      lockfileSha256: sha256(lockfileBuffer),
+    };
+  }
+
+  return null;
+}
+
+function buildWorkspaceBootstrapState(
+  bootstrap: ResolvedNodeWorkspaceBootstrap,
+  overrides: Partial<WorkspaceBootstrapState>,
+): WorkspaceBootstrapState {
+  return {
+    packageManager: bootstrap.packageManager,
+    installCommand: bootstrap.installCommand,
+    lockfilePath: bootstrap.lockfilePath,
+    lockfileSha256: bootstrap.lockfileSha256,
+    status: "succeeded",
+    ...overrides,
+  };
+}
+
+// Reinstall only when the isolated checkout is missing dependencies or its recorded
+// bootstrap metadata no longer matches the current lockfile/install command contract.
+export function shouldInstallWorkspaceBootstrap(input: {
+  bootstrap: ResolvedNodeWorkspaceBootstrap;
+  bootstrapMetadata: Record<string, unknown>;
+  nodeModulesPresent: boolean;
+}) {
+  const previousLockfileSha = readNonEmptyString(input.bootstrapMetadata.lockfileSha256);
+  const previousStatus = readNonEmptyString(input.bootstrapMetadata.status);
+  const previousCommand = readNonEmptyString(input.bootstrapMetadata.installCommand);
+  return (
+    !input.nodeModulesPresent ||
+    previousStatus !== "succeeded" ||
+    previousLockfileSha !== input.bootstrap.lockfileSha256 ||
+    previousCommand !== input.bootstrap.installCommand
+  );
 }
 
 export function resolveRuntimeSessionParamsForWorkspace(input: {
@@ -512,6 +655,110 @@ export function heartbeatService(db: Db) {
     return runtimeForRun?.sessionId ?? null;
   }
 
+  async function getActiveCheckoutForIssueAgent(
+    companyId: string,
+    issueId: string,
+    agentId: string,
+  ) {
+    return db
+      .select()
+      .from(workspaceCheckouts)
+      .where(
+        and(
+          eq(workspaceCheckouts.companyId, companyId),
+          eq(workspaceCheckouts.issueId, issueId),
+          eq(workspaceCheckouts.agentId, agentId),
+          eq(workspaceCheckouts.status, "active"),
+        ),
+      )
+      .orderBy(desc(workspaceCheckouts.updatedAt))
+      .then((rows) => rows[0] ?? null);
+  }
+
+  async function updateWorkspaceCheckoutMetadata(
+    checkoutId: string,
+    metadata: Record<string, unknown>,
+  ) {
+    return db
+      .update(workspaceCheckouts)
+      .set({
+        metadata,
+        updatedAt: new Date(),
+      })
+      .where(eq(workspaceCheckouts.id, checkoutId))
+      .returning()
+      .then((rows) => rows[0] ?? null);
+  }
+
+  async function ensureWorkspaceCheckoutDependencies(input: {
+    checkout: typeof workspaceCheckouts.$inferSelect;
+    worktreePath: string;
+  }) {
+    const bootstrap = await resolveNodeWorkspaceBootstrap(input.worktreePath);
+    const checkoutMetadata = parseCheckoutMetadata(input.checkout.metadata);
+    const bootstrapMetadata = parseCheckoutMetadata(checkoutMetadata.workspaceBootstrap);
+    const nodeModulesPath = path.join(input.worktreePath, "node_modules");
+    const nodeModulesPresent = await pathExists(nodeModulesPath);
+
+    if (!bootstrap) {
+      if (checkoutMetadata.workspaceBootstrap) {
+        await updateWorkspaceCheckoutMetadata(input.checkout.id, {
+          ...checkoutMetadata,
+          workspaceBootstrap: null,
+        });
+      }
+      return;
+    }
+
+    const shouldInstall = shouldInstallWorkspaceBootstrap({
+      bootstrap,
+      bootstrapMetadata,
+      nodeModulesPresent,
+    });
+
+    if (!shouldInstall) {
+      return;
+    }
+
+    try {
+      await execFileAsync(bootstrap.packageManager, bootstrap.installArgs, {
+        cwd: input.worktreePath,
+        env: process.env,
+        timeout: WORKSPACE_BOOTSTRAP_TIMEOUT_MS,
+      });
+
+      await updateWorkspaceCheckoutMetadata(input.checkout.id, {
+        ...checkoutMetadata,
+        workspaceBootstrap: buildWorkspaceBootstrapState(bootstrap, {
+          installedAt: new Date().toISOString(),
+          status: "succeeded",
+          error: undefined,
+        }),
+      });
+    } catch (error) {
+      const reason =
+        error instanceof Error ? error.message : String(error);
+      const missingCommand =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        (error as { code?: unknown }).code === "ENOENT";
+      const message = missingCommand
+        ? `Workspace bootstrap failed because "${bootstrap.packageManager}" is not installed on the host.`
+        : `Workspace bootstrap failed while running "${bootstrap.installCommand}" in "${input.worktreePath}": ${reason}`;
+
+      await updateWorkspaceCheckoutMetadata(input.checkout.id, {
+        ...checkoutMetadata,
+        workspaceBootstrap: buildWorkspaceBootstrapState(bootstrap, {
+          status: "failed",
+          error: message,
+        }),
+      });
+
+      throw new WorkspaceBootstrapError(message, "workspace_bootstrap_failed");
+    }
+  }
+
   // Repo-backed project workspaces use one reusable worktree per issue/agent pair so
   // concurrent runs do not trample each other inside the same checkout.
   async function ensureRepoCheckout(input: {
@@ -549,7 +796,7 @@ export function heartbeatService(db: Db) {
     const worktreePath = readNonEmptyString(existing?.worktreePath) ?? fallbackPath;
     const branchName =
       readNonEmptyString(existing?.branchName) ??
-      `paperclip/${safeWorkspaceSegment(input.agentId)}/${safeWorkspaceSegment(input.issueId)}`;
+      `codex/paperclip/${safeWorkspaceSegment(input.agentId)}/${safeWorkspaceSegment(input.issueId)}`;
     const worktreeExists = await fs
       .stat(worktreePath)
       .then((stats) => stats.isDirectory())
@@ -603,6 +850,11 @@ export function heartbeatService(db: Db) {
           .then((rows) => rows[0]!)
       );
 
+    await ensureWorkspaceCheckoutDependencies({
+      checkout: resolvedRow,
+      worktreePath,
+    });
+
     return {
       id: resolvedRow.id,
       branchName,
@@ -620,6 +872,56 @@ export function heartbeatService(db: Db) {
         updatedAt: new Date(),
       })
       .where(eq(workspaceCheckouts.id, checkoutId));
+  }
+
+  async function recordCheckoutReviewSubmission(input: {
+    companyId: string;
+    issueId: string;
+    agentId: string;
+    checkoutId?: string | null;
+    branchName: string;
+    headCommitSha: string;
+    remoteBranchName?: string | null;
+    pullRequestUrl: string;
+    pullRequestNumber?: number | null;
+    pullRequestTitle?: string | null;
+  }) {
+    const checkout = input.checkoutId
+      ? await db
+          .select()
+          .from(workspaceCheckouts)
+          .where(
+            and(
+              eq(workspaceCheckouts.id, input.checkoutId),
+              eq(workspaceCheckouts.companyId, input.companyId),
+            ),
+          )
+          .then((rows) => rows[0] ?? null)
+      : await getActiveCheckoutForIssueAgent(input.companyId, input.issueId, input.agentId);
+
+    if (!checkout) {
+      throw notFound("Active workspace checkout not found for review submission");
+    }
+    if (checkout.issueId !== input.issueId || checkout.agentId !== input.agentId) {
+      throw conflict("Review submission checkout does not belong to this issue assignee");
+    }
+
+    const updatedAt = new Date();
+    return db
+      .update(workspaceCheckouts)
+      .set({
+        branchName: input.branchName,
+        headCommitSha: input.headCommitSha,
+        remoteBranchName: input.remoteBranchName ?? null,
+        pullRequestUrl: input.pullRequestUrl,
+        pullRequestNumber: input.pullRequestNumber ?? null,
+        pullRequestTitle: input.pullRequestTitle ?? null,
+        submittedForReviewAt: updatedAt,
+        updatedAt,
+      })
+      .where(eq(workspaceCheckouts.id, checkout.id))
+      .returning()
+      .then((rows) => rows[0] ?? null);
   }
 
   async function resolveWorkspaceForRun(
@@ -701,6 +1003,9 @@ export function heartbeatService(db: Db) {
                 warnings: [],
               };
             } catch (error) {
+              if (error instanceof WorkspaceBootstrapError) {
+                throw error;
+              }
               logger.warn(
                 {
                   companyId: agent.companyId,
@@ -1313,12 +1618,44 @@ export function heartbeatService(db: Db) {
     const previousSessionParams = normalizeSessionParams(
       sessionCodec.deserialize(taskSessionForRun?.sessionParamsJson ?? null),
     );
-    const resolvedWorkspace = await resolveWorkspaceForRun(
-      agent,
-      context,
-      previousSessionParams,
-      { useProjectWorkspace: issueAssigneeOverrides?.useProjectWorkspace ?? null },
-    );
+    let resolvedWorkspace: ResolvedWorkspaceForRun;
+    try {
+      resolvedWorkspace = await resolveWorkspaceForRun(
+        agent,
+        context,
+        previousSessionParams,
+        { useProjectWorkspace: issueAssigneeOverrides?.useProjectWorkspace ?? null },
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      const errorCode =
+        error instanceof WorkspaceBootstrapError ? error.code : "workspace_resolution_failed";
+      const failedRun = await setRunStatus(run.id, "failed", {
+        error: reason,
+        errorCode,
+        finishedAt: new Date(),
+      });
+      await setWakeupStatus(run.wakeupRequestId, "failed", {
+        finishedAt: new Date(),
+        error: reason,
+      });
+      if (failedRun) {
+        await appendRunEvent(failedRun, 1, {
+          eventType: "workspace.bootstrap.failed",
+          stream: "system",
+          level: "error",
+          message: reason,
+          payload: {
+            errorCode,
+            error: reason,
+          },
+        });
+        await releaseIssueExecutionAndPromote(failedRun);
+      }
+      await finalizeAgentStatus(agent.id, "failed");
+      await startNextQueuedRunForAgent(agent.id);
+      return;
+    }
     const runtimeSessionResolution = resolveRuntimeSessionParamsForWorkspace({
       agentId: agent.id,
       previousSessionParams,
@@ -1385,6 +1722,7 @@ export function heartbeatService(db: Db) {
     let handle: RunLogHandle | null = null;
     let stdoutExcerpt = "";
     let stderrExcerpt = "";
+    let stdoutStructuredBuffer = "";
 
     try {
       const startedAt = run.startedAt ?? new Date();
@@ -1442,7 +1780,30 @@ export function heartbeatService(db: Db) {
         })
         .where(eq(heartbeatRuns.id, runId));
 
+      const appendStructuredStdoutEvents = async (chunk: string, ts: string) => {
+        const combined = stdoutStructuredBuffer + chunk;
+        const lines = combined.split(/\r?\n/);
+        stdoutStructuredBuffer = lines.pop() ?? "";
+        for (const rawLine of lines) {
+          const line = rawLine.trim();
+          if (!line) continue;
+          for (const event of parseStructuredStdoutLine(agent.adapterType, line, ts)) {
+            await appendRunEvent(currentRun, seq++, event);
+          }
+        }
+      };
+
+      const flushStructuredStdoutEvents = async (ts: string) => {
+        const trailing = stdoutStructuredBuffer.trim();
+        stdoutStructuredBuffer = "";
+        if (!trailing) return;
+        for (const event of parseStructuredStdoutLine(agent.adapterType, trailing, ts)) {
+          await appendRunEvent(currentRun, seq++, event);
+        }
+      };
+
       const onLog = async (stream: "stdout" | "stderr", chunk: string) => {
+        const chunkTs = new Date().toISOString();
         if (stream === "stdout") stdoutExcerpt = appendExcerpt(stdoutExcerpt, chunk);
         if (stream === "stderr") stderrExcerpt = appendExcerpt(stderrExcerpt, chunk);
 
@@ -1450,7 +1811,7 @@ export function heartbeatService(db: Db) {
           await runLogStore.append(handle, {
             stream,
             chunk,
-            ts: new Date().toISOString(),
+            ts: chunkTs,
           });
         }
 
@@ -1470,6 +1831,15 @@ export function heartbeatService(db: Db) {
             truncated: payloadChunk.length !== chunk.length,
           },
         });
+
+        if (stream === "stdout") {
+          await appendStructuredStdoutEvents(chunk, chunkTs);
+          return;
+        }
+
+        for (const event of stderrChunkToRunEvents(chunk)) {
+          await appendRunEvent(currentRun, seq++, event);
+        }
       };
       for (const warning of runtimeWorkspaceWarnings) {
         // Workspace fallbacks are useful operator context, but they are not execution errors.
@@ -1524,6 +1894,7 @@ export function heartbeatService(db: Db) {
         onMeta: onAdapterMeta,
         authToken: authToken ?? undefined,
       });
+      await flushStructuredStdoutEvents(new Date().toISOString());
       const nextSessionState = resolveNextSessionState({
         codec: sessionCodec,
         adapterResult,
@@ -1642,6 +2013,22 @@ export function heartbeatService(db: Db) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown adapter failure";
       logger.error({ err, runId }, "heartbeat execution failed");
+
+      if (stdoutStructuredBuffer.trim()) {
+        try {
+          for (const event of parseStructuredStdoutLine(
+            agent.adapterType,
+            stdoutStructuredBuffer.trim(),
+            new Date().toISOString(),
+          )) {
+            await appendRunEvent(run, seq++, event);
+          }
+        } catch (parseErr) {
+          logger.warn({ err: parseErr, runId }, "failed to flush structured stdout events after adapter failure");
+        } finally {
+          stdoutStructuredBuffer = "";
+        }
+      }
 
       let logSummary: { bytes: number; sha256?: string; compressed: boolean } | null = null;
       if (handle) {
@@ -2337,6 +2724,10 @@ export function heartbeatService(db: Db) {
     },
 
     getRun,
+
+    getActiveCheckoutForIssueAgent,
+
+    recordReviewSubmission: recordCheckoutReviewSubmission,
 
     getRuntimeState: async (agentId: string) => {
       const state = await getRuntimeState(agentId);
