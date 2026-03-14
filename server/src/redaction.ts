@@ -49,6 +49,10 @@ function isPlainBinding(value: unknown): value is { type: "plain"; value: unknow
   return value.type === "plain" && "value" in value;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export function redactSensitiveText(value: string): string {
   // Transcript payloads are often plain text, so secret-bearing substrings need
   // redaction even when the surrounding payload shape is otherwise harmless.
@@ -67,18 +71,20 @@ export function redactSensitiveText(value: string): string {
   // Keep operator-facing logs readable by collapsing the local home directory
   // into a shell-style hint instead of exposing the machine-specific path.
   for (const homeDir of HOME_DIR_CANDIDATES) {
-    const normalized = homeDir.replace(/\\/g, "/");
-    const variants = new Set<string>([homeDir, normalized]);
-    if (!normalized.endsWith("/")) {
-      variants.add(`${normalized}/`);
-    }
+    // Match only complete home directory roots (followed by slash or end),
+    // so sibling paths like `/Users/alice2` are not rewritten to `~2`.
+    const variants = new Set<string>(
+      [homeDir.replace(/[\\/]+$/g, ""), homeDir.replace(/\\/g, "/").replace(/\/+$/g, "")]
+        .filter((entry) => entry.length > 0),
+    );
     for (const variant of variants) {
-      redacted = redacted.split(variant).join(variant.endsWith("/") ? "~/" : "~");
+      const escaped = escapeRegExp(variant);
+      redacted = redacted.replace(new RegExp(`${escaped}(?=$|[\\\\/])`, "g"), "~");
     }
   }
 
   if (CURRENT_USERNAME) {
-    const escaped = CURRENT_USERNAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const escaped = escapeRegExp(CURRENT_USERNAME);
     redacted = redacted.replace(new RegExp(`\\b${escaped}\\b`, "g"), "current-user");
   }
 
