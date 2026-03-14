@@ -1,6 +1,6 @@
 # Development Status
 
-Last updated: 2026-03-11
+Last updated: 2026-03-14
 
 ## Current feature status
 
@@ -33,6 +33,12 @@ Last updated: 2026-03-11
   - heartbeat run list responses use trimmed operator-facing summaries
   - child-process env hardening strips nested Claude env leakage
   - Windows/local adapter wrapper handling is more robust
+- Assignee filter helpers and regression coverage: `done`
+  - `ui/src/lib/issues-list.ts` now owns shared assignee filtering, grouping labels, and group-derived new-issue defaults
+  - tests cover agent, explicit-user, `Me`, and unassigned assignee filters
+- Redaction edge-case follow-up: `done`
+  - operator-facing text redaction no longer rewrites sibling paths that only share a home-dir prefix
+  - exact home-dir roots still collapse to `~` when surrounded by punctuation or quotes
 - Runs and configuration UX: `done`
   - reusable transcript renderer with `nice` / `raw` modes
   - agent runs remain a first-class detail surface
@@ -51,8 +57,8 @@ Last updated: 2026-03-11
 
 ## Branch state
 
-- Active branch in this workspace: `development`
-- Working tree contains the roadmap/health/governance implementation plus selective upstream adoption for startup safety, transcript UX, and hardening.
+- Active integration branch: `development`
+- Current working baseline contains the roadmap/health/governance implementation plus selective upstream adoption for startup safety, transcript UX, and the March 14 redaction/issues-list follow-up hardening.
 
 ## Primary gap
 

@@ -1,6 +1,6 @@
 # Task List
 
-Last updated: 2026-03-10
+Last updated: 2026-03-14
 
 ## Done
 
@@ -73,6 +73,9 @@ Last updated: 2026-03-10
   - PR verify on `development`
   - promotion verify on `master`
   - lockfile refresh bot on `development`
+- Backfill follow-up coverage and hardening for the 2026-03-14 integration fixes:
+  - redaction edge cases around home-dir prefix collisions and punctuation-delimited roots
+  - reusable issues-list assignee filter/group/default helpers with focused tests
 
 ## Partial
 
