@@ -265,6 +265,7 @@ export function OnboardingWizard() {
       ...defaultCreateValues,
       adapterType,
       cwd,
+      search: adapterType === "codex_local" ? true : defaultCreateValues.search,
       model:
         adapterType === "codex_local"
           ? model || DEFAULT_CODEX_LOCAL_MODEL

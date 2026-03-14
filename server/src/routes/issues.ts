@@ -87,10 +87,21 @@ export function issueRoutes(db: Db, storage: StorageService) {
     return false;
   }
 
-  function canCreateAgentsLegacy(agent: { permissions: Record<string, unknown> | null | undefined; role: string }) {
+  function canCreateAgentsPermission(agent: {
+    permissions: Record<string, unknown> | null | undefined;
+    role: string;
+  }) {
     if (agent.role === "ceo") return true;
     if (!agent.permissions || typeof agent.permissions !== "object") return false;
     return Boolean((agent.permissions as Record<string, unknown>).canCreateAgents);
+  }
+
+  function canAssignTasksPermission(agent: {
+    permissions: Record<string, unknown> | null | undefined;
+  }) {
+    if (!agent.permissions || typeof agent.permissions !== "object") return true;
+    const permissionValue = (agent.permissions as Record<string, unknown>).canAssignTasks;
+    return typeof permissionValue === "boolean" ? permissionValue : true;
   }
 
   async function assertCanAssignTasks(req: Request, companyId: string) {
@@ -106,7 +117,13 @@ export function issueRoutes(db: Db, storage: StorageService) {
       const allowedByGrant = await access.hasPermission(companyId, "agent", req.actor.agentId, "tasks:assign");
       if (allowedByGrant) return;
       const actorAgent = await agentsSvc.getById(req.actor.agentId);
-      if (actorAgent && actorAgent.companyId === companyId && canCreateAgentsLegacy(actorAgent)) return;
+      if (
+        actorAgent &&
+        actorAgent.companyId === companyId &&
+        (canAssignTasksPermission(actorAgent) || canCreateAgentsPermission(actorAgent))
+      ) {
+        return;
+      }
       throw forbidden("Missing permission: tasks:assign");
     }
     throw unauthorized();
@@ -243,6 +260,40 @@ export function issueRoutes(db: Db, storage: StorageService) {
   function truncate(value: string, max: number) {
     if (value.length <= max) return value;
     return `${value.slice(0, Math.max(0, max - 1))}...`;
+  }
+
+  function appendReviewSubmissionToComment(input: {
+    commentBody: string;
+    reviewSubmission: {
+      branchName: string;
+      headCommitSha: string;
+      remoteBranchName?: string | null;
+      pullRequestUrl: string;
+      pullRequestNumber?: number | null;
+      pullRequestTitle?: string | null;
+    };
+  }) {
+    const lines = [
+      input.commentBody.trim(),
+      "",
+      "## Review Submission",
+      "",
+      `- Branch: ${input.reviewSubmission.branchName}`,
+      `- Head commit: ${input.reviewSubmission.headCommitSha}`,
+      `- Pull request: ${input.reviewSubmission.pullRequestUrl}`,
+    ];
+
+    if (input.reviewSubmission.remoteBranchName) {
+      lines.push(`- Remote branch: ${input.reviewSubmission.remoteBranchName}`);
+    }
+    if (input.reviewSubmission.pullRequestNumber != null) {
+      lines.push(`- PR number: ${input.reviewSubmission.pullRequestNumber}`);
+    }
+    if (input.reviewSubmission.pullRequestTitle) {
+      lines.push(`- PR title: ${input.reviewSubmission.pullRequestTitle}`);
+    }
+
+    return lines.join("\n");
   }
 
   async function resolveAgentReviewTarget(issue: {
@@ -747,13 +798,45 @@ export function issueRoutes(db: Db, storage: StorageService) {
         : null;
     const hiddenAtRaw = req.body.hiddenAt;
     const commentBody = typeof req.body.comment === "string" ? req.body.comment : undefined;
+    const reviewSubmission = req.body.reviewSubmission;
     const normalizedBody: Record<string, unknown> = { ...req.body };
+    let commentBodyForPersistence = commentBody;
 
     let reviewTarget: ReviewTarget | null = null;
     if (requestedAgentReviewStatus && req.actor.agentId) {
       if (!commentBody?.trim()) {
         res.status(422).json({ error: "Agents must include a handoff update when sending work to review." });
         return;
+      }
+
+      const activeCheckout = await heartbeat.getActiveCheckoutForIssueAgent(
+        existing.companyId,
+        existing.id,
+        req.actor.agentId,
+      );
+      if (activeCheckout && !reviewSubmission) {
+        res.status(422).json({
+          error: "Repo-backed review handoffs must include reviewSubmission metadata.",
+        });
+        return;
+      }
+      if (reviewSubmission) {
+        await heartbeat.recordReviewSubmission({
+          companyId: existing.companyId,
+          issueId: existing.id,
+          agentId: req.actor.agentId,
+          checkoutId: reviewSubmission.checkoutId ?? null,
+          branchName: reviewSubmission.branchName,
+          headCommitSha: reviewSubmission.headCommitSha,
+          remoteBranchName: reviewSubmission.remoteBranchName ?? null,
+          pullRequestUrl: reviewSubmission.pullRequestUrl,
+          pullRequestNumber: reviewSubmission.pullRequestNumber ?? null,
+          pullRequestTitle: reviewSubmission.pullRequestTitle ?? null,
+        });
+        commentBodyForPersistence = appendReviewSubmissionToComment({
+          commentBody,
+          reviewSubmission,
+        });
       }
 
       // Agents never close work outright. A completion attempt becomes a review handoff.
@@ -783,7 +866,12 @@ export function issueRoutes(db: Db, storage: StorageService) {
     }
     if (!(await assertAgentRunCheckoutOwnership(req, res, existing))) return;
 
-    const { comment: _commentBody, hiddenAt: _normalizedHiddenAt, ...updateFields } = normalizedBody;
+    const {
+      comment: _commentBody,
+      hiddenAt: _normalizedHiddenAt,
+      reviewSubmission: _reviewSubmission,
+      ...updateFields
+    } = normalizedBody;
     if (hiddenAtRaw !== undefined) {
       updateFields.hiddenAt = hiddenAtRaw ? new Date(hiddenAtRaw) : null;
     }
@@ -841,14 +929,24 @@ export function issueRoutes(db: Db, storage: StorageService) {
         ...updateFields,
         identifier: issue.identifier,
         ...(requestedAgentReviewStatus ? { requestedStatus: requestedAgentReviewStatus } : {}),
-        ...(commentBody ? { source: "comment" } : {}),
+        ...(commentBodyForPersistence ? { source: "comment" } : {}),
+        ...(reviewSubmission
+          ? {
+              reviewSubmission: {
+                branchName: reviewSubmission.branchName,
+                headCommitSha: reviewSubmission.headCommitSha,
+                pullRequestUrl: reviewSubmission.pullRequestUrl,
+                pullRequestNumber: reviewSubmission.pullRequestNumber ?? null,
+              },
+            }
+          : {}),
         _previous: hasFieldChanges ? previous : undefined,
       },
     });
 
     let comment = null;
-    if (commentBody) {
-      comment = await svc.addComment(id, commentBody, {
+    if (commentBodyForPersistence) {
+      comment = await svc.addComment(id, commentBodyForPersistence, {
         agentId: actor.agentId ?? undefined,
         userId: actor.actorType === "user" ? actor.actorId : undefined,
       });

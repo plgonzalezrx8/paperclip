@@ -224,6 +224,9 @@ export function agentRoutes(db: Db) {
       if (!asNonEmptyString(next.model)) {
         next.model = DEFAULT_CODEX_LOCAL_MODEL;
       }
+      if (typeof next.search !== "boolean") {
+        next.search = true;
+      }
       const hasBypassFlag =
         typeof next.dangerouslyBypassApprovalsAndSandbox === "boolean" ||
         typeof next.dangerouslyBypassSandbox === "boolean";

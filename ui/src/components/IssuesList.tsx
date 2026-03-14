@@ -8,6 +8,14 @@ import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
 import { formatAssigneeUserLabel } from "../lib/assignees";
 import { groupBy } from "../lib/groupBy";
+import {
+  applyIssueFilters,
+  issueAssigneeGroupKey,
+  issueAssigneeGroupLabel,
+  issueDefaultsForGroup,
+  ISSUE_ASSIGNEE_FILTER_ME,
+  ISSUE_ASSIGNEE_FILTER_UNASSIGNED,
+} from "../lib/issues-list";
 import { formatDate, cn } from "../lib/utils";
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
@@ -86,24 +94,6 @@ function arraysEqual(a: string[], b: string[]): boolean {
 
 function toggleInArray(arr: string[], value: string): string[] {
   return arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
-}
-
-function applyFilters(issues: Issue[], state: IssueViewState, currentUserId?: string | null): Issue[] {
-  let result = issues;
-  if (state.statuses.length > 0) result = result.filter((i) => state.statuses.includes(i.status));
-  if (state.priorities.length > 0) result = result.filter((i) => state.priorities.includes(i.priority));
-  if (state.assignees.length > 0) {
-    result = result.filter((issue) => {
-      for (const assignee of state.assignees) {
-        if (assignee === "__unassigned" && !issue.assigneeAgentId && !issue.assigneeUserId) return true;
-        if (assignee === "__me" && currentUserId && issue.assigneeUserId === currentUserId) return true;
-        if (issue.assigneeAgentId === assignee) return true;
-      }
-      return false;
-    });
-  }
-  if (state.labels.length > 0) result = result.filter((i) => (i.labelIds ?? []).some((id) => state.labels.includes(id)));
-  return result;
 }
 
 function sortIssues(issues: Issue[], state: IssueViewState): Issue[] {
@@ -237,7 +227,7 @@ export function IssuesList({
 
   const filtered = useMemo(() => {
     const sourceIssues = normalizedIssueSearch.length > 0 ? searchedIssues : issues;
-    const filteredByControls = applyFilters(sourceIssues, viewState, currentUserId);
+    const filteredByControls = applyIssueFilters(sourceIssues, viewState, currentUserId);
     return sortIssues(filteredByControls, viewState);
   }, [issues, searchedIssues, viewState, normalizedIssueSearch, currentUserId]);
 
@@ -284,34 +274,16 @@ export function IssuesList({
         .map((p) => ({ key: p, label: statusLabel(p), items: groups[p]! }));
     }
     // assignee
-    const groups = groupBy(
-      filtered,
-      (issue) => issue.assigneeAgentId ?? (issue.assigneeUserId ? `__user:${issue.assigneeUserId}` : "__unassigned"),
-    );
+    const groups = groupBy(filtered, issueAssigneeGroupKey);
     return Object.keys(groups).map((key) => ({
       key,
-      label:
-        key === "__unassigned"
-          ? "Unassigned"
-          : key.startsWith("__user:")
-            ? (formatAssigneeUserLabel(key.slice("__user:".length), currentUserId) ?? "User")
-            : (agentName(key) ?? key.slice(0, 8)),
+      label: issueAssigneeGroupLabel(key, { currentUserId, agentName }),
       items: groups[key]!,
     }));
   }, [filtered, viewState.groupBy, agents, agentName, currentUserId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const newIssueDefaults = (groupKey?: string) => {
-    const defaults: Record<string, string> = {};
-    if (projectId) defaults.projectId = projectId;
-    if (groupKey) {
-      if (viewState.groupBy === "status") defaults.status = groupKey;
-      else if (viewState.groupBy === "priority") defaults.priority = groupKey;
-      else if (viewState.groupBy === "assignee" && groupKey !== "__unassigned") {
-        if (groupKey.startsWith("__user:")) defaults.assigneeUserId = groupKey.slice("__user:".length);
-        else defaults.assigneeAgentId = groupKey;
-      }
-    }
-    return defaults;
+    return issueDefaultsForGroup({ groupBy: viewState.groupBy, groupKey, projectId });
   };
 
   const assignIssue = (issueId: string, assigneeAgentId: string | null, assigneeUserId: string | null = null) => {
@@ -466,16 +438,30 @@ export function IssuesList({
                       <div className="space-y-0.5 max-h-32 overflow-y-auto">
                         <label className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
                           <Checkbox
-                            checked={viewState.assignees.includes("__unassigned")}
-                            onCheckedChange={() => updateView({ assignees: toggleInArray(viewState.assignees, "__unassigned") })}
+                            checked={viewState.assignees.includes(ISSUE_ASSIGNEE_FILTER_UNASSIGNED)}
+                            onCheckedChange={() =>
+                              updateView({
+                                assignees: toggleInArray(
+                                  viewState.assignees,
+                                  ISSUE_ASSIGNEE_FILTER_UNASSIGNED,
+                                ),
+                              })
+                            }
                           />
                           <span className="text-sm">No assignee</span>
                         </label>
                         {currentUserId && (
                           <label className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
                             <Checkbox
-                              checked={viewState.assignees.includes("__me")}
-                              onCheckedChange={() => updateView({ assignees: toggleInArray(viewState.assignees, "__me") })}
+                              checked={viewState.assignees.includes(ISSUE_ASSIGNEE_FILTER_ME)}
+                              onCheckedChange={() =>
+                                updateView({
+                                  assignees: toggleInArray(
+                                    viewState.assignees,
+                                    ISSUE_ASSIGNEE_FILTER_ME,
+                                  ),
+                                })
+                              }
                             />
                             <User className="h-3.5 w-3.5 text-muted-foreground" />
                             <span className="text-sm">Me</span>

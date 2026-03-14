@@ -34,9 +34,20 @@ export const createIssueLabelSchema = z.object({
 
 export type CreateIssueLabel = z.infer<typeof createIssueLabelSchema>;
 
+export const issueReviewSubmissionSchema = z.object({
+  checkoutId: z.string().uuid().optional().nullable(),
+  branchName: z.string().trim().min(1),
+  headCommitSha: z.string().trim().min(1),
+  remoteBranchName: z.string().trim().min(1).optional().nullable(),
+  pullRequestUrl: z.string().trim().url(),
+  pullRequestNumber: z.number().int().positive().optional().nullable(),
+  pullRequestTitle: z.string().trim().min(1).optional().nullable(),
+});
+
 export const updateIssueSchema = createIssueSchema.partial().extend({
   comment: z.string().min(1).optional(),
   hiddenAt: z.string().datetime().nullable().optional(),
+  reviewSubmission: issueReviewSubmissionSchema.optional(),
 });
 
 export type UpdateIssue = z.infer<typeof updateIssueSchema>;

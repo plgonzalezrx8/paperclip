@@ -29,6 +29,7 @@ import { Identity } from "../components/Identity";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { formatCents, formatDate, relativeTime, formatTokens } from "../lib/utils";
 import { cn } from "../lib/utils";
+import { buildTranscriptFromRunEvents, hasStructuredTranscriptEvents } from "../lib/run-events";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -390,8 +391,8 @@ export function AgentDetail() {
   });
 
   const updatePermissions = useMutation({
-    mutationFn: (canCreateAgents: boolean) =>
-      agentsApi.updatePermissions(agentLookupRef, { canCreateAgents }, resolvedCompanyId ?? undefined),
+    mutationFn: (permissions: { canCreateAgents: boolean; canAssignTasks: boolean }) =>
+      agentsApi.updatePermissions(agentLookupRef, permissions, resolvedCompanyId ?? undefined),
     onSuccess: () => {
       setActionError(null);
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(routeAgentRef) });
@@ -1069,7 +1070,10 @@ function AgentConfigurePage({
   onSaveActionChange: (save: (() => void) | null) => void;
   onCancelActionChange: (cancel: (() => void) | null) => void;
   onSavingChange: (saving: boolean) => void;
-  updatePermissions: { mutate: (canCreate: boolean) => void; isPending: boolean };
+  updatePermissions: {
+    mutate: (permissions: { canCreateAgents: boolean; canAssignTasks: boolean }) => void;
+    isPending: boolean;
+  };
 }) {
   const queryClient = useQueryClient();
   const [revisionsOpen, setRevisionsOpen] = useState(false);
@@ -1175,7 +1179,10 @@ function ConfigurationTab({
   onSaveActionChange: (save: (() => void) | null) => void;
   onCancelActionChange: (cancel: (() => void) | null) => void;
   onSavingChange: (saving: boolean) => void;
-  updatePermissions: { mutate: (canCreate: boolean) => void; isPending: boolean };
+  updatePermissions: {
+    mutate: (permissions: { canCreateAgents: boolean; canAssignTasks: boolean }) => void;
+    isPending: boolean;
+  };
 }) {
   const queryClient = useQueryClient();
 
@@ -1226,11 +1233,31 @@ function ConfigurationTab({
               size="sm"
               className="h-7 px-2.5 text-xs"
               onClick={() =>
-                updatePermissions.mutate(!Boolean(agent.permissions?.canCreateAgents))
+                updatePermissions.mutate({
+                  canCreateAgents: !Boolean(agent.permissions?.canCreateAgents),
+                  canAssignTasks: Boolean(agent.permissions?.canAssignTasks),
+                })
               }
               disabled={updatePermissions.isPending}
             >
               {agent.permissions?.canCreateAgents ? "Enabled" : "Disabled"}
+            </Button>
+          </div>
+          <div className="mt-3 flex items-center justify-between text-sm">
+            <span>Can assign tasks</span>
+            <Button
+              variant={agent.permissions?.canAssignTasks ? "default" : "outline"}
+              size="sm"
+              className="h-7 px-2.5 text-xs"
+              onClick={() =>
+                updatePermissions.mutate({
+                  canCreateAgents: Boolean(agent.permissions?.canCreateAgents),
+                  canAssignTasks: !Boolean(agent.permissions?.canAssignTasks),
+                })
+              }
+              disabled={updatePermissions.isPending}
+            >
+              {agent.permissions?.canAssignTasks ? "Enabled" : "Disabled"}
             </Button>
           </div>
         </div>
@@ -2235,12 +2262,6 @@ function LogViewer({
       })),
     [logLines, currentUserId],
   );
-
-  const adapter = useMemo(() => getUIAdapter(adapterType), [adapterType]);
-  const transcript = useMemo(
-    () => buildTranscript(redactedLogLines, adapter.parseStdoutLine),
-    [redactedLogLines, adapter],
-  );
   const redactedEvents = useMemo(
     () =>
       events.map((event) => ({
@@ -2252,6 +2273,13 @@ function LogViewer({
       })),
     [events, currentUserId],
   );
+  const adapter = useMemo(() => getUIAdapter(adapterType), [adapterType]);
+  const transcript = useMemo(() => {
+    if (hasStructuredTranscriptEvents(redactedEvents)) {
+      return buildTranscriptFromRunEvents(redactedEvents);
+    }
+    return buildTranscript(redactedLogLines, adapter.parseStdoutLine);
+  }, [redactedEvents, redactedLogLines, adapter]);
   const redactedLogError = logError
     ? redactOperatorFacingText(logError, { currentUserId })
     : null;
@@ -2441,7 +2469,7 @@ function LogViewer({
       {redactedEvents.length > 0 && (
         <div>
           <div className="mb-2 text-xs font-medium text-muted-foreground">Events ({redactedEvents.length})</div>
-          <div className="bg-neutral-100 dark:bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-0.5">
+          <div className="bg-neutral-100 dark:bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-2">
             {redactedEvents.map((evt) => {
               const color = evt.color
                 ?? (evt.level ? levelColors[evt.level] : null)
@@ -2449,16 +2477,36 @@ function LogViewer({
                 ?? "text-foreground";
 
               return (
-                <div key={evt.id} className="flex gap-2">
-                  <span className="text-neutral-400 dark:text-neutral-600 shrink-0 select-none w-16">
-                    {new Date(evt.createdAt).toLocaleTimeString("en-US", { hour12: false })}
-                  </span>
-                  <span className={cn("shrink-0 w-14", evt.stream ? (streamColors[evt.stream] ?? "text-neutral-500") : "text-neutral-500")}>
-                    {evt.stream ? `[${evt.stream}]` : ""}
-                  </span>
-                  <span className={cn("break-all", color)}>
-                    {evt.message ?? (evt.payload ? JSON.stringify(evt.payload) : "")}
-                  </span>
+                <div key={evt.id} className="rounded-md border border-border/60 bg-background/50 p-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-neutral-400 dark:text-neutral-600 shrink-0 select-none w-16">
+                      {new Date(evt.createdAt).toLocaleTimeString("en-US", { hour12: false })}
+                    </span>
+                    <span className={cn(
+                      "shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px]",
+                      evt.stream ? (streamColors[evt.stream] ?? "text-neutral-500") : "text-neutral-500",
+                    )}>
+                      {evt.stream ? evt.stream : "event"}
+                    </span>
+                    <span className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      {evt.eventType}
+                    </span>
+                    {evt.level && (
+                      <span className={cn("text-[10px] uppercase tracking-wide", color)}>
+                        {evt.level}
+                      </span>
+                    )}
+                  </div>
+                  {evt.message && (
+                    <div className={cn("mt-2 break-all", color)}>
+                      {evt.message}
+                    </div>
+                  )}
+                  {evt.payload && (
+                    <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded bg-neutral-100/70 p-2 text-[11px] text-muted-foreground dark:bg-neutral-950/80">
+                      {JSON.stringify(evt.payload, null, 2)}
+                    </pre>
+                  )}
                 </div>
               );
             })}

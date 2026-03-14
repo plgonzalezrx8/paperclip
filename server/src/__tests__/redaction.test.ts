@@ -96,6 +96,20 @@ describe("redaction", () => {
     expect(redactSensitiveText(text)).toBe("cwd=~/paperclip/project");
   });
 
+  it("does not rewrite paths that only share a home-dir prefix", () => {
+    const homeDir = os.homedir().replace(/[\\/]+$/g, "");
+    const text = `cwd=${homeDir}2/paperclip/project`;
+
+    expect(redactSensitiveText(text)).toBe(text);
+  });
+
+  it("redacts exact home-dir roots even when delimited by punctuation", () => {
+    const homeDir = os.homedir().replace(/[\\/]+$/g, "");
+    const text = `cwd='${homeDir}'`;
+
+    expect(redactSensitiveText(text)).toBe("cwd='~'");
+  });
+
   it("redacts the current username in operator-facing text", () => {
     const username = os.userInfo().username;
     const text = `operator ${username} resumed the run`;

@@ -39,6 +39,8 @@ const mockApprovalService = vi.hoisted(() => ({
 
 const mockHeartbeatService = vi.hoisted(() => ({
   wakeup: vi.fn(),
+  getActiveCheckoutForIssueAgent: vi.fn(),
+  recordReviewSubmission: vi.fn(),
 }));
 
 const mockIssueApprovalService = vi.hoisted(() => ({
@@ -83,7 +85,7 @@ function createAgent(
     name: "Builder Bot",
     status: "running",
     reportsTo: "manager-1",
-    permissions: { canCreateAgents: false },
+    permissions: { canCreateAgents: false, canAssignTasks: true },
     role: "manager",
     managerPlanningModeOverride: null,
     resolvedManagerPlanningMode: "automatic",
@@ -175,6 +177,8 @@ describe("issue routes", () => {
     mockProjectService.getById.mockReset();
     mockGoalService.getById.mockReset();
     mockHeartbeatService.wakeup.mockReset();
+    mockHeartbeatService.getActiveCheckoutForIssueAgent.mockReset();
+    mockHeartbeatService.recordReviewSubmission.mockReset();
     mockIssueApprovalService.listApprovalsForIssue.mockReset();
     mockIssueApprovalService.link.mockReset();
     mockIssueApprovalService.unlink.mockReset();
@@ -237,6 +241,10 @@ describe("issue routes", () => {
       category: "briefing",
       kind: "daily_briefing",
       status: "published",
+    });
+    mockHeartbeatService.getActiveCheckoutForIssueAgent.mockResolvedValue(null);
+    mockHeartbeatService.recordReviewSubmission.mockResolvedValue({
+      id: "checkout-1",
     });
   });
 
@@ -325,6 +333,102 @@ describe("issue routes", () => {
     expect(res.body.error).toContain("handoff update");
     expect(mockIssueService.update).not.toHaveBeenCalled();
     expect(mockRecordService.createBriefing).not.toHaveBeenCalled();
+  });
+
+  it("requires review submission metadata for repo-backed review handoffs", async () => {
+    mockIssueService.getById.mockResolvedValue(createIssue());
+    mockHeartbeatService.getActiveCheckoutForIssueAgent.mockResolvedValue({
+      id: "checkout-1",
+      issueId: ISSUE_ID,
+      agentId: "agent-1",
+      branchName: "codex/paperclip/agent-1/pap-12",
+      worktreePath: "/tmp/worktree",
+    });
+    const app = createApp({
+      type: "agent",
+      source: "agent_key",
+      companyId: COMPANY_ID,
+      agentId: "agent-1",
+      runId: "run-1",
+    });
+
+    const res = await request(app)
+      .patch(`/api/issues/${ISSUE_ID}`)
+      .send({
+        status: "done",
+        comment: "Ready for review.",
+      });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toContain("reviewSubmission");
+    expect(mockHeartbeatService.recordReviewSubmission).not.toHaveBeenCalled();
+  });
+
+  it("persists repo review submission metadata and appends it to the handoff comment", async () => {
+    const existing = createIssue();
+    const updated = createIssue({
+      status: "in_review",
+      assigneeAgentId: null,
+      assigneeUserId: "board-user",
+      checkoutRunId: null,
+      updatedAt: new Date("2026-03-09T11:00:00.000Z"),
+    });
+    mockIssueService.getById.mockResolvedValue(existing);
+    mockIssueService.update.mockResolvedValue(updated);
+    mockIssueService.addComment.mockResolvedValue({
+      id: "comment-2",
+      issueId: ISSUE_ID,
+      body: "Ready for review.\n\n## Review Submission\n\n- Branch: codex/paperclip/agent-1/pap-12\n- Head commit: abc123\n- Pull request: https://github.com/paperclipai/paperclip/pull/42",
+      authorAgentId: "agent-1",
+      authorUserId: null,
+      createdAt: new Date("2026-03-09T11:00:00.000Z"),
+      updatedAt: new Date("2026-03-09T11:00:00.000Z"),
+    });
+    mockHeartbeatService.getActiveCheckoutForIssueAgent.mockResolvedValue({
+      id: "checkout-1",
+      issueId: ISSUE_ID,
+      agentId: "agent-1",
+      branchName: "codex/paperclip/agent-1/pap-12",
+      worktreePath: "/tmp/worktree",
+    });
+
+    const app = createApp({
+      type: "agent",
+      source: "agent_key",
+      companyId: COMPANY_ID,
+      agentId: "agent-1",
+      runId: "run-1",
+    });
+
+    const res = await request(app)
+      .patch(`/api/issues/${ISSUE_ID}`)
+      .send({
+        status: "done",
+        comment: "Ready for review.",
+        reviewSubmission: {
+          checkoutId: "66666666-6666-4666-8666-666666666666",
+          branchName: "codex/paperclip/agent-1/pap-12",
+          headCommitSha: "abc123",
+          pullRequestUrl: "https://github.com/paperclipai/paperclip/pull/42",
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(mockHeartbeatService.recordReviewSubmission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId: COMPANY_ID,
+        issueId: ISSUE_ID,
+        agentId: "agent-1",
+        branchName: "codex/paperclip/agent-1/pap-12",
+        headCommitSha: "abc123",
+        pullRequestUrl: "https://github.com/paperclipai/paperclip/pull/42",
+      }),
+    );
+    expect(mockIssueService.addComment).toHaveBeenCalledWith(
+      ISSUE_ID,
+      expect.stringContaining("## Review Submission"),
+      { agentId: "agent-1", userId: undefined },
+    );
   });
 
   it("rejects top-level issue creation without approval in approval-required mode", async () => {

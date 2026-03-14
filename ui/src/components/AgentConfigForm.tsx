@@ -524,6 +524,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   const nextValues: CreateConfigValues = { ...defaults, adapterType: t };
                   if (t === "codex_local") {
                     nextValues.model = DEFAULT_CODEX_LOCAL_MODEL;
+                    nextValues.search = true;
                     nextValues.dangerouslyBypassSandbox =
                       DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX;
                   } else if (t === "cursor") {
@@ -551,6 +552,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                       mode: "",
                       ...(t === "codex_local"
                         ? {
+                            search: true,
                             dangerouslyBypassApprovalsAndSandbox:
                               DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX,
                           }

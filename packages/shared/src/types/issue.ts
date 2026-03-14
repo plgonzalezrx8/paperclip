@@ -49,6 +49,16 @@ export interface IssueAssigneeAdapterOverrides {
   useProjectWorkspace?: boolean;
 }
 
+export interface IssueReviewSubmission {
+  checkoutId?: string | null;
+  branchName: string;
+  headCommitSha: string;
+  remoteBranchName?: string | null;
+  pullRequestUrl: string;
+  pullRequestNumber?: number | null;
+  pullRequestTitle?: string | null;
+}
+
 export interface Issue {
   id: string;
   companyId: string;

@@ -402,14 +402,14 @@ export function CommentThread({
             <InlineEntitySelector
               value={reassignTarget}
               options={reassignOptions}
-              placeholder="Assignee"
+              placeholder="Assign to"
               noneLabel="No assignee"
               searchPlaceholder="Search assignees..."
               emptyMessage="No assignees found."
               onChange={setReassignTarget}
               className="text-xs h-8"
               renderTriggerValue={(option) => {
-                if (!option) return <span className="text-muted-foreground">Assignee</span>;
+                if (!option) return <span className="text-muted-foreground">Assign to</span>;
                 const agentId = option.id.startsWith("agent:") ? option.id.slice("agent:".length) : null;
                 const agent = agentId ? agentMap?.get(agentId) : null;
                 return (
@@ -417,7 +417,7 @@ export function CommentThread({
                     {agent ? (
                       <AgentIcon icon={agent.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     ) : null}
-                    <span className="truncate">{option.label}</span>
+                    <span className="truncate">Assign to: {option.label}</span>
                   </>
                 );
               }}

@@ -73,8 +73,16 @@ export function OpenClawGatewayConfigFields({
       ? String(effectiveHeaders["x-openclaw-auth"])
       : "";
 
+  // Create mode stores the token outside adapterConfig so the submit builder can
+  // serialize it into the header map the server expects.
+  const gatewayToken = isCreate ? values!.openClawGatewayToken : effectiveGatewayToken;
+
   const commitGatewayToken = (rawValue: string) => {
     const nextValue = rawValue.trim();
+    if (isCreate) {
+      set!({ openClawGatewayToken: nextValue });
+      return;
+    }
     const nextHeaders: Record<string, unknown> = { ...effectiveHeaders };
     if (nextValue) {
       nextHeaders["x-openclaw-token"] = nextValue;
@@ -89,8 +97,9 @@ export function OpenClawGatewayConfigFields({
   const sessionStrategy = eff(
     "adapterConfig",
     "sessionKeyStrategy",
-    String(config.sessionKeyStrategy ?? "fixed"),
+    String(config.sessionKeyStrategy ?? "issue"),
   );
+  const effectiveSessionStrategy = isCreate ? values!.openClawSessionKeyStrategy : sessionStrategy;
 
   return (
     <>
@@ -112,106 +121,144 @@ export function OpenClawGatewayConfigFields({
         />
       </Field>
 
-      {!isCreate && (
-        <>
-          <Field label="Paperclip API URL override">
-            <DraftInput
-              value={
-                eff(
+      <SecretField
+        label="Gateway auth token (x-openclaw-token)"
+        value={gatewayToken}
+        onCommit={commitGatewayToken}
+        placeholder="OpenClaw gateway token"
+      />
+
+      <Field label="Paperclip API URL override">
+        <DraftInput
+          value={
+            isCreate
+              ? values!.openClawPaperclipApiUrl
+              : eff(
                   "adapterConfig",
                   "paperclipApiUrl",
                   String(config.paperclipApiUrl ?? ""),
                 )
-              }
-              onCommit={(v) => mark("adapterConfig", "paperclipApiUrl", v || undefined)}
-              immediate
-              className={inputClass}
-              placeholder="https://paperclip.example"
-            />
-          </Field>
+          }
+          onCommit={(v) =>
+            isCreate
+              ? set!({ openClawPaperclipApiUrl: v })
+              : mark("adapterConfig", "paperclipApiUrl", v || undefined)
+          }
+          immediate
+          className={inputClass}
+          placeholder="https://paperclip.example"
+        />
+      </Field>
 
-          <Field label="Session strategy">
-            <select
-              value={sessionStrategy}
-              onChange={(e) => mark("adapterConfig", "sessionKeyStrategy", e.target.value)}
-              className={inputClass}
-            >
-              <option value="fixed">Fixed</option>
-              <option value="issue">Per issue</option>
-              <option value="run">Per run</option>
-            </select>
-          </Field>
+      <Field label="Session strategy">
+        <select
+          value={effectiveSessionStrategy}
+          onChange={(e) =>
+            isCreate
+              ? set!({ openClawSessionKeyStrategy: e.target.value })
+              : mark("adapterConfig", "sessionKeyStrategy", e.target.value)
+          }
+          className={inputClass}
+        >
+          <option value="fixed">Fixed</option>
+          <option value="issue">Per issue</option>
+          <option value="run">Per run</option>
+        </select>
+      </Field>
 
-          {sessionStrategy === "fixed" && (
-            <Field label="Session key">
-              <DraftInput
-                value={eff("adapterConfig", "sessionKey", String(config.sessionKey ?? "paperclip"))}
-                onCommit={(v) => mark("adapterConfig", "sessionKey", v || undefined)}
-                immediate
-                className={inputClass}
-                placeholder="paperclip"
-              />
-            </Field>
-          )}
-
-          <SecretField
-            label="Gateway auth token (x-openclaw-token)"
-            value={effectiveGatewayToken}
-            onCommit={commitGatewayToken}
-            placeholder="OpenClaw gateway token"
+      {effectiveSessionStrategy === "fixed" && (
+        <Field label="Session key">
+          <DraftInput
+            value={
+              isCreate
+                ? values!.openClawSessionKey
+                : eff("adapterConfig", "sessionKey", String(config.sessionKey ?? "paperclip"))
+            }
+            onCommit={(v) =>
+              isCreate
+                ? set!({ openClawSessionKey: v })
+                : mark("adapterConfig", "sessionKey", v || undefined)
+            }
+            immediate
+            className={inputClass}
+            placeholder="paperclip"
           />
-
-          <Field label="Role">
-            <DraftInput
-              value={eff("adapterConfig", "role", String(config.role ?? "operator"))}
-              onCommit={(v) => mark("adapterConfig", "role", v || undefined)}
-              immediate
-              className={inputClass}
-              placeholder="operator"
-            />
-          </Field>
-
-          <Field label="Scopes (comma-separated)">
-            <DraftInput
-              value={eff("adapterConfig", "scopes", parseScopes(config.scopes ?? ["operator.admin"]))}
-              onCommit={(v) => {
-                const parsed = v
-                  .split(",")
-                  .map((entry) => entry.trim())
-                  .filter(Boolean);
-                mark("adapterConfig", "scopes", parsed.length > 0 ? parsed : undefined);
-              }}
-              immediate
-              className={inputClass}
-              placeholder="operator.admin"
-            />
-          </Field>
-
-          <Field label="Wait timeout (ms)">
-            <DraftInput
-              value={eff("adapterConfig", "waitTimeoutMs", String(config.waitTimeoutMs ?? "120000"))}
-              onCommit={(v) => {
-                const parsed = Number.parseInt(v.trim(), 10);
-                mark(
-                  "adapterConfig",
-                  "waitTimeoutMs",
-                  Number.isFinite(parsed) && parsed > 0 ? parsed : undefined,
-                );
-              }}
-              immediate
-              className={inputClass}
-              placeholder="120000"
-            />
-          </Field>
-
-          <Field label="Device auth">
-            <div className="text-xs text-muted-foreground leading-relaxed">
-              Always enabled for gateway agents. Paperclip persists a device key during onboarding so pairing approvals
-              remain stable across runs.
-            </div>
-          </Field>
-        </>
+        </Field>
       )}
+
+      <Field label="Role">
+        <DraftInput
+          value={
+            isCreate
+              ? values!.openClawRole
+              : eff("adapterConfig", "role", String(config.role ?? "operator"))
+          }
+          onCommit={(v) =>
+            isCreate ? set!({ openClawRole: v }) : mark("adapterConfig", "role", v || undefined)
+          }
+          immediate
+          className={inputClass}
+          placeholder="operator"
+        />
+      </Field>
+
+      <Field label="Scopes (comma-separated)">
+        <DraftInput
+          value={
+            isCreate
+              ? values!.openClawScopes
+              : eff("adapterConfig", "scopes", parseScopes(config.scopes ?? ["operator.admin"]))
+          }
+          onCommit={(v) => {
+            if (isCreate) {
+              set!({ openClawScopes: v });
+              return;
+            }
+
+            const parsed = v
+              .split(",")
+              .map((entry) => entry.trim())
+              .filter(Boolean);
+            mark("adapterConfig", "scopes", parsed.length > 0 ? parsed : undefined);
+          }}
+          immediate
+          className={inputClass}
+          placeholder="operator.admin"
+        />
+      </Field>
+
+      <Field label="Wait timeout (ms)">
+        <DraftInput
+          value={
+            isCreate
+              ? values!.openClawWaitTimeoutMs
+              : eff("adapterConfig", "waitTimeoutMs", String(config.waitTimeoutMs ?? "120000"))
+          }
+          onCommit={(v) => {
+            if (isCreate) {
+              set!({ openClawWaitTimeoutMs: v });
+              return;
+            }
+
+            const parsed = Number.parseInt(v.trim(), 10);
+            mark(
+              "adapterConfig",
+              "waitTimeoutMs",
+              Number.isFinite(parsed) && parsed > 0 ? parsed : undefined,
+            );
+          }}
+          immediate
+          className={inputClass}
+          placeholder="120000"
+        />
+      </Field>
+
+      <Field label="Device auth">
+        <div className="text-xs text-muted-foreground leading-relaxed">
+          Always enabled for gateway agents. Paperclip persists a device key during onboarding so pairing approvals
+          remain stable across runs.
+        </div>
+      </Field>
     </>
   );
 }

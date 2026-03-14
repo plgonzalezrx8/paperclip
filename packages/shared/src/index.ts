@@ -137,6 +137,7 @@ export type {
   WorkspaceCheckout,
   Issue,
   IssueAssigneeAdapterOverrides,
+  IssueReviewSubmission,
   IssueComment,
   IssueAttachment,
   IssueLabel,

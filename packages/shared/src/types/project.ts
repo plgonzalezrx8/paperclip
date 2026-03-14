@@ -42,9 +42,15 @@ export interface WorkspaceCheckout {
   lastRunId: string | null;
   branchName: string | null;
   worktreePath: string | null;
+  headCommitSha: string | null;
+  remoteBranchName: string | null;
+  pullRequestUrl: string | null;
+  pullRequestNumber: number | null;
+  pullRequestTitle: string | null;
   status: WorkspaceCheckoutStatus;
   baseRef: string | null;
   releasedAt: Date | null;
+  submittedForReviewAt: Date | null;
   metadata: Record<string, unknown> | null;
   createdAt: Date;
   updatedAt: Date;

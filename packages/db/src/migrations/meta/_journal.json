@@ -204,6 +204,13 @@
       "when": 1773110009809,
       "tag": "0028_lazy_hemingway",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1773529215353,
+      "tag": "0029_mature_karma",
+      "breakpoints": true
     }
   ]
 }

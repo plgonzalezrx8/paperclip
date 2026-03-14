@@ -10,6 +10,7 @@ import {
   asStringArray,
   parseObject,
   buildPaperclipEnv,
+  renderPaperclipRuntimeNote,
   redactEnvForLogs,
   ensureAbsoluteDirectory,
   ensureCommandResolvable,
@@ -127,6 +128,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const workspaceCwd = asString(workspaceContext.cwd, "");
   const workspaceSource = asString(workspaceContext.source, "");
   const workspaceId = asString(workspaceContext.workspaceId, "");
+  const workspaceCheckoutId = asString(workspaceContext.checkoutId, "");
+  const workspaceBranch = asString(workspaceContext.branchName, "");
   const workspaceRepoUrl = asString(workspaceContext.repoUrl, "");
   const workspaceRepoRef = asString(workspaceContext.repoRef, "");
   const workspaceHints = Array.isArray(context.paperclipWorkspaces)
@@ -194,6 +197,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   }
   if (workspaceId) {
     env.PAPERCLIP_WORKSPACE_ID = workspaceId;
+  }
+  if (workspaceCheckoutId) {
+    env.PAPERCLIP_WORKSPACE_CHECKOUT_ID = workspaceCheckoutId;
+  }
+  if (workspaceBranch) {
+    env.PAPERCLIP_WORKSPACE_BRANCH = workspaceBranch;
   }
   if (workspaceRepoUrl) {
     env.PAPERCLIP_WORKSPACE_REPO_URL = workspaceRepoUrl;
@@ -278,7 +287,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     run: { id: runId, source: "on_demand" },
     context,
   });
-  const prompt = `${instructionsPrefix}${renderedPrompt}`;
+  const prompt = `${instructionsPrefix}${renderPaperclipRuntimeNote(env)}${renderedPrompt}`;
 
   const buildArgs = (resumeSessionId: string | null) => {
     const args = ["exec", "--json"];

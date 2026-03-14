@@ -9,6 +9,7 @@ import {
   asStringArray,
   parseObject,
   buildPaperclipEnv,
+  renderPaperclipRuntimeNote,
   redactEnvForLogs,
   ensureAbsoluteDirectory,
   ensureCommandResolvable,
@@ -117,6 +118,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const workspaceCwd = asString(workspaceContext.cwd, "");
   const workspaceSource = asString(workspaceContext.source, "");
   const workspaceId = asString(workspaceContext.workspaceId, "");
+  const workspaceCheckoutId = asString(workspaceContext.checkoutId, "");
+  const workspaceBranch = asString(workspaceContext.branchName, "");
   const workspaceRepoUrl = asString(workspaceContext.repoUrl, "");
   const workspaceRepoRef = asString(workspaceContext.repoRef, "");
   const workspaceHints = Array.isArray(context.paperclipWorkspaces)
@@ -176,6 +179,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (workspaceCwd) env.PAPERCLIP_WORKSPACE_CWD = workspaceCwd;
   if (workspaceSource) env.PAPERCLIP_WORKSPACE_SOURCE = workspaceSource;
   if (workspaceId) env.PAPERCLIP_WORKSPACE_ID = workspaceId;
+  if (workspaceCheckoutId) env.PAPERCLIP_WORKSPACE_CHECKOUT_ID = workspaceCheckoutId;
+  if (workspaceBranch) env.PAPERCLIP_WORKSPACE_BRANCH = workspaceBranch;
   if (workspaceRepoUrl) env.PAPERCLIP_WORKSPACE_REPO_URL = workspaceRepoUrl;
   if (workspaceRepoRef) env.PAPERCLIP_WORKSPACE_REPO_REF = workspaceRepoRef;
   if (workspaceHints.length > 0) env.PAPERCLIP_WORKSPACES_JSON = JSON.stringify(workspaceHints);
@@ -282,6 +287,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     run: { id: runId, source: "on_demand" },
     context,
   });
+  const paperclipRuntimeNote = renderPaperclipRuntimeNote(env);
 
   // User prompt is simple - just the rendered prompt template without instructions
   const userPrompt = renderTemplate(promptTemplate, {
@@ -332,7 +338,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     // Send the prompt as an RPC command
     const promptCommand = {
       type: "prompt",
-      message: userPrompt,
+      message: `${paperclipRuntimeNote}${userPrompt}`,
     };
     return JSON.stringify(promptCommand) + "\n";
   };
@@ -347,7 +353,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         commandNotes,
         commandArgs: args,
         env: redactEnvForLogs(env),
-        prompt: userPrompt,
+        prompt: `${paperclipRuntimeNote}${userPrompt}`,
         context,
       });
     }
