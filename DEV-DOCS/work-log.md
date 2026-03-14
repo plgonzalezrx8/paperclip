@@ -1,5 +1,20 @@
 # Work Log
 
+## 2026-03-14
+
+### Session: OpenClaw agent creation form fix
+
+- Fixed the `openclaw_gateway` new-agent flow so create mode now exposes the gateway token and other gateway-specific configuration instead of only the WebSocket URL.
+- Extended the shared create-form state and OpenClaw config builder so create-mode values serialize into the server-required adapter config shape, including `headers.x-openclaw-token`.
+- Added UI regression coverage for:
+  - create-mode rendering of the OpenClaw token/config fields
+  - config serialization of gateway token, scopes, wait timeout, and fixed-session overrides
+- Re-ran:
+  - `pnpm exec vitest run ui/src/adapters/openclaw-gateway/config-fields.test.tsx`
+  - `pnpm -r typecheck`
+  - `pnpm test:run`
+  - `pnpm build`
+
 ## 2026-03-11
 
 ### Session: selective upstream adoption, startup safety, and docs sync

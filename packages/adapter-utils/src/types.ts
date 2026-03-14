@@ -207,6 +207,13 @@ export interface CreateConfigValues {
   envVars: string;
   envBindings: Record<string, unknown>;
   url: string;
+  openClawGatewayToken: string;
+  openClawPaperclipApiUrl: string;
+  openClawRole: string;
+  openClawScopes: string;
+  openClawWaitTimeoutMs: string;
+  openClawSessionKeyStrategy: string;
+  openClawSessionKey: string;
   bootstrapPrompt: string;
   maxTurnsPerRun: number;
   heartbeatEnabled: boolean;
