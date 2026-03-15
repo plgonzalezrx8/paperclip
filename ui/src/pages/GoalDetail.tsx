@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { goalsApi } from "../api/goals";
@@ -15,17 +15,67 @@ import { StatusBadge } from "../components/StatusBadge";
 import { InlineEditor } from "../components/InlineEditor";
 import { EntityRow } from "../components/EntityRow";
 import { PageSkeleton } from "../components/PageSkeleton";
-import { projectUrl } from "../lib/utils";
+import { projectUrl, cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus } from "lucide-react";
-import type { Goal, GoalPlanningHorizon, Project } from "@paperclipai/shared";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ChevronDown, Plus } from "lucide-react";
+import { GOAL_STATUSES, type Goal, type GoalPlanningHorizon, type GoalStatus, type Project } from "@paperclipai/shared";
 
 const ROADMAP_HORIZON_LABELS: Record<GoalPlanningHorizon, string> = {
   now: "Now",
   next: "Next",
   later: "Later",
 };
+
+/**
+ * Surface roadmap status changes on the main detail view so lifecycle updates do not depend on the side panel.
+ */
+function GoalStatusPicker({
+  status,
+  onChange,
+}: {
+  status: GoalStatus;
+  onChange: (status: GoalStatus) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Change status from ${status.replace(/_/g, " ")}`}
+          className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/70 px-2 py-1 text-xs font-medium transition-colors hover:bg-accent/50"
+        >
+          <span className="text-[0.64rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+            Status
+          </span>
+          <StatusBadge status={status} />
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-44 p-1" align="start">
+        {GOAL_STATUSES.map((goalStatus) => (
+          <button
+            key={goalStatus}
+            type="button"
+            className={cn(
+              "flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent/50",
+              goalStatus === status && "bg-accent",
+            )}
+            onClick={() => {
+              onChange(goalStatus);
+              setOpen(false);
+            }}
+          >
+            <StatusBadge status={goalStatus} />
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export function GoalDetail() {
   const { goalId } = useParams<{ goalId: string }>();
@@ -130,7 +180,10 @@ export function GoalDetail() {
           <span className="paperclip-work-meta">
             {ROADMAP_HORIZON_LABELS[goal.planningHorizon]}
           </span>
-          <StatusBadge status={goal.status} />
+          <GoalStatusPicker
+            status={goal.status}
+            onChange={(status) => updateGoal.mutate({ status })}
+          />
         </div>
 
         <InlineEditor
