@@ -1,6 +1,6 @@
 # Start Here
 
-Last updated: 2026-03-11
+Last updated: 2026-03-14
 
 ## Current focus
 
@@ -13,14 +13,15 @@ Paperclip has already shipped the executive-layer sprint and now includes the ne
 - durable `records`, schedules, milestones, knowledge publication, and checkout-aware execution flows
 - a whole-repo condense audit that identifies the next safe simplification batches
 - selective upstream hardening adoption for startup, auth, adapters, and issue filtering
+- follow-up hardening for operator-facing redaction edge cases and issues-list assignee filter coverage
 - repo-local startup profiles and launch-history auditing for dual-repo workflows
 - a reusable agent runs transcript view with readable and raw modes
 - a dedicated project `Configuration` tab with explicit-save behavior
 
-## Current branch
+## Branch baseline
 
-- Working branch: `development`
 - Integration branch: `development`
+- Feature and docs PRs should merge into `development`
 
 ## Immediate priorities
 
@@ -51,6 +52,8 @@ Paperclip has already shipped the executive-layer sprint and now includes the ne
 - `pnpm paperclipai doctor --launch-history` shows the repo-local startup profile plus recent launch records.
 - Agent detail is the primary run-analysis surface via `Dashboard / Configuration / Runs`.
 - Project detail uses a dedicated `Configuration` tab so project-level config changes can be reviewed before save.
+- Operator-facing redaction now preserves sibling paths that merely share a home-dir prefix and still collapses exact home-dir roots to `~` when punctuation-delimited.
+- Issue-list assignee filtering/grouping/default behavior now lives in `ui/src/lib/issues-list.ts` with focused regression coverage.
 - `development` is the active integration branch in this workspace.
 
 ## Read next

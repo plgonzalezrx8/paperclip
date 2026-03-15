@@ -1,8 +1,38 @@
 # Recent Changes Snapshot
 
-Date: 2026-03-10
+Date: 2026-03-14
 
 This file explains the current state of the repo in product and operational terms so a human can look at the running app and understand what is actually new.
+
+## March 14 follow-up hardening
+
+No new product surface landed in the reviewed March 14 integration window. The concrete delta on `origin/development` is correctness hardening and regression coverage for already-shipped operator workflows.
+
+Reviewed commits:
+
+1. `494b867` `fix redaction home-path prefix collision`
+2. `2f6bec2` `fix(redaction): redact delimited home-dir roots`
+3. `7e08582` `Add issues list assignee filter tests`
+
+Actual code touchpoints:
+
+- `server/src/redaction.ts`
+- `server/src/__tests__/redaction.test.ts`
+- `ui/src/lib/issues-list.ts`
+- `ui/src/lib/issues-list.test.ts`
+- `ui/src/components/IssuesList.tsx`
+
+What changed in practice:
+
+- operator-facing log redaction no longer rewrites sibling paths that merely share the local home-directory prefix
+- exact home-directory roots still collapse to `~` when they appear inside quotes or other punctuation-delimited text
+- issues-list assignee filtering, assignee grouping labels, and group-derived new-issue defaults now share one helper module with focused regression tests for agent, explicit-user, `Me`, and unassigned cases
+
+What did not change:
+
+- no new API surface
+- no new route
+- no new product destination in the board UI
 
 ## Post-merge CI update
 

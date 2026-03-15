@@ -14,6 +14,28 @@
   - `pnpm -r typecheck`
   - `pnpm test:run`
   - `pnpm build`
+
+### Session: follow-up hardening for redaction boundaries and issues-list assignee helpers
+
+- Reviewed the 2026-03-14 `origin/development` commits that changed shipped behavior or regression coverage:
+  - `494b867` `fix redaction home-path prefix collision`
+  - `2f6bec2` `fix(redaction): redact delimited home-dir roots`
+  - `7e08582` `Add issues list assignee filter tests`
+- Tightened operator-facing redaction in `server/src/redaction.ts` so:
+  - sibling paths that only share a home-directory prefix are left untouched
+  - exact home-directory roots still redact to `~` when delimited by punctuation or quotes
+- Added regression coverage in `server/src/__tests__/redaction.test.ts` for both home-path edge cases.
+- Extracted shared issues-list assignee behavior into `ui/src/lib/issues-list.ts`:
+  - assignee filtering
+  - assignee grouping keys and labels
+  - group-derived defaults for new issue creation
+- Added focused coverage in `ui/src/lib/issues-list.test.ts` for:
+  - agent assignee filters
+  - explicit user filters
+  - `Me` and unassigned filters
+  - assignee-group labels and new-issue defaults
+- Kept the change scoped to correctness and coverage:
+  - no new route, API, or product surface was introduced by these commits
 ## 2026-03-13
 
 ### Session: QoL upstream adoption for assignee UX, dialog flow, and privacy hardening
