@@ -105,7 +105,7 @@ function SortableCompanyItem({
               e.preventDefault();
               onSelect();
             }}
-            className="group relative flex items-center justify-center overflow-visible"
+            className="group relative flex items-center justify-center overflow-visible outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-[1rem]"
           >
             <div
               className={cn(
@@ -265,7 +265,7 @@ export function CompanyRail() {
       {/* The rail behaves like a company switchboard, so the brand mark gets a clear console mount. */}
       <div className="flex w-full shrink-0 flex-col items-center gap-2 border-b border-[color:var(--surface-outline)] px-3 py-4">
         <div className="paperclip-chip flex h-11 w-11 items-center justify-center rounded-[calc(var(--radius)-0.15rem)]">
-          <Paperclip className="h-5 w-5 text-primary" />
+          <Paperclip className="size-5 text-primary" />
         </div>
         <span className="paperclip-kicker text-center text-[0.6rem]">Net</span>
       </div>
@@ -304,7 +304,7 @@ export function CompanyRail() {
               className="paperclip-chip flex h-12 w-12 items-center justify-center rounded-[1rem] border-dashed text-muted-foreground transition-[border-color,color,transform] duration-150 hover:-translate-y-[1px] hover:text-foreground"
               aria-label="Add company"
             >
-              <Plus className="h-5 w-5" />
+              <Plus className="size-5" />
             </button>
           </TooltipTrigger>
           <TooltipContent side="right" sideOffset={8}>

@@ -232,7 +232,7 @@ export function Layout() {
                 aria-label={`Switch to ${nextTheme} mode`}
                 title={`Switch to ${nextTheme} mode`}
               >
-                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
               </Button>
             </div>
           </div>
@@ -267,7 +267,7 @@ export function Layout() {
                 aria-label={`Switch to ${nextTheme} mode`}
                 title={`Switch to ${nextTheme} mode`}
               >
-                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
               </Button>
             </div>
           </div>

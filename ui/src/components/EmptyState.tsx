@@ -5,20 +5,24 @@ import { Button } from "@/components/ui/button";
 interface EmptyStateProps {
   icon: LucideIcon;
   message: string;
+  description?: string;
   action?: string;
   onAction?: () => void;
 }
 
-export function EmptyState({ icon: Icon, message, action, onAction }: EmptyStateProps) {
+export function EmptyState({ icon: Icon, message, description, action, onAction }: EmptyStateProps) {
   return (
     <div className="paperclip-empty-state">
       <div className="paperclip-empty-state-icon">
-        <Icon className="h-9 w-9 text-muted-foreground" />
+        <Icon className="size-9 text-muted-foreground" />
       </div>
       <p className="max-w-xl text-sm leading-6 text-muted-foreground">{message}</p>
+      {description && (
+        <p className="max-w-md text-xs leading-5 text-muted-foreground/70">{description}</p>
+      )}
       {action && onAction && (
         <Button onClick={onAction}>
-          <Plus className="h-4 w-4 mr-1.5" />
+          <Plus className="size-4 mr-1.5" />
           {action}
         </Button>
       )}

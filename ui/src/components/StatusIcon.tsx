@@ -20,27 +20,51 @@ interface StatusIconProps {
 export function StatusIcon({ status, onChange, className, showLabel }: StatusIconProps) {
   const [open, setOpen] = useState(false);
   const colorClass = issueStatusIcon[status] ?? issueStatusIconDefault;
-  const isDone = status === "done";
 
   const circle = (
     <span
       className={cn(
-        "relative inline-flex h-4 w-4 rounded-full border-2 shrink-0",
+        "relative inline-flex size-4 rounded-full border-2 shrink-0 items-center justify-center",
         colorClass,
         onChange && !showLabel && "cursor-pointer",
         className
       )}
     >
-      {isDone && (
-        <span className="absolute inset-0 m-auto h-2 w-2 rounded-full bg-current" />
+      {/* Backlog: dashed appearance — use dotted border via ring trick */}
+      {status === "backlog" && (
+        <span className="absolute inset-0 rounded-full border border-dashed border-current opacity-50" />
       )}
+      {/* In Progress: half-fill (left half solid) */}
+      {status === "in_progress" && (
+        <span className="absolute left-0 top-0 h-full w-1/2 rounded-l-full bg-current opacity-60" />
+      )}
+      {/* In Review: small diamond/dot rotated 45deg */}
+      {status === "in_review" && (
+        <span className="absolute inset-0 m-auto size-1.5 rotate-45 bg-current" />
+      )}
+      {/* Done: solid center dot */}
+      {status === "done" && (
+        <span className="absolute inset-0 m-auto size-2 rounded-full bg-current" />
+      )}
+      {/* Cancelled: diagonal line (strikethrough) */}
+      {status === "cancelled" && (
+        <span className="absolute inset-0 m-auto h-[1.5px] w-2.5 rotate-45 rounded-full bg-current" />
+      )}
+      {/* Blocked: small X shape */}
+      {status === "blocked" && (
+        <>
+          <span className="absolute inset-0 m-auto h-[1.5px] w-2 rotate-45 rounded-full bg-current" />
+          <span className="absolute inset-0 m-auto h-[1.5px] w-2 -rotate-45 rounded-full bg-current" />
+        </>
+      )}
+      {/* Todo: empty circle — no inner shape needed */}
     </span>
   );
 
   if (!onChange) return showLabel ? <span className="inline-flex items-center gap-1.5">{circle}<span className="text-sm">{statusLabel(status)}</span></span> : circle;
 
   const trigger = showLabel ? (
-    <button className="inline-flex items-center gap-1.5 cursor-pointer hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 transition-colors">
+    <button className="inline-flex items-center gap-1.5 cursor-pointer hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background">
       {circle}
       <span className="text-sm">{statusLabel(status)}</span>
     </button>

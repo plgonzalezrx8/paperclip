@@ -74,7 +74,7 @@ export function Sidebar() {
             onClick={openSearch}
             aria-label="Open command search"
           >
-            <Search className="h-4 w-4" />
+            <Search className="size-4" />
           </Button>
         </div>
         <Button
@@ -82,7 +82,7 @@ export function Sidebar() {
           onClick={() => openNewIssue()}
           className="mt-4 w-full justify-start gap-2.5"
         >
-          <SquarePen className="h-4 w-4" />
+          <SquarePen className="size-4" />
           <span>New Issue</span>
         </Button>
       </div>
