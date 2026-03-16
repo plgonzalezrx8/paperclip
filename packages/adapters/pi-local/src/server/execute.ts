@@ -18,6 +18,7 @@ import {
   listPaperclipSkillEntries,
   removeMaintainerOnlySkillSymlinks,
   renderTemplate,
+  joinPromptSections,
   runChildProcess,
 } from "@paperclipai/adapter-utils/server-utils";
 import { isPiUnknownSessionError, parsePiJsonl } from "./parse.js";
@@ -286,19 +287,29 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     agent,
     run: { id: runId, source: "on_demand" },
     context,
-  });
+  };
+  const renderedSystemPromptExtension = renderTemplate(systemPromptExtension, templateData);
+  const renderedHeartbeatPrompt = renderTemplate(promptTemplate, templateData);
+  const renderedBootstrapPrompt =
+    !canResumeSession && bootstrapPromptTemplate.trim().length > 0
+      ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
+      : "";
+  const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
   const paperclipRuntimeNote = renderPaperclipRuntimeNote(env);
-
-  // User prompt is simple - just the rendered prompt template without instructions
-  const userPrompt = renderTemplate(promptTemplate, {
-    agentId: agent.id,
-    companyId: agent.companyId,
-    runId,
-    company: { id: agent.companyId },
-    agent,
-    run: { id: runId, source: "on_demand" },
-    context,
-  });
+  const userPrompt = joinPromptSections([
+    renderedBootstrapPrompt,
+    sessionHandoffNote,
+    paperclipRuntimeNote,
+    renderedHeartbeatPrompt,
+  ]);
+  const promptMetrics = {
+    systemPromptChars: renderedSystemPromptExtension.length,
+    promptChars: userPrompt.length,
+    bootstrapPromptChars: renderedBootstrapPrompt.length,
+    sessionHandoffChars: sessionHandoffNote.length,
+    runtimeNoteChars: paperclipRuntimeNote.length,
+    heartbeatPromptChars: renderedHeartbeatPrompt.length,
+  };
 
   const commandNotes = (() => {
     if (!resolvedInstructionsFilePath) return [] as string[];
@@ -338,7 +349,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     // Send the prompt as an RPC command
     const promptCommand = {
       type: "prompt",
-      message: `${paperclipRuntimeNote}${userPrompt}`,
+      message: userPrompt,
     };
     return JSON.stringify(promptCommand) + "\n";
   };
@@ -353,7 +364,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         commandNotes,
         commandArgs: args,
         env: redactEnvForLogs(env),
-        prompt: `${paperclipRuntimeNote}${userPrompt}`,
+        prompt: userPrompt,
+        promptMetrics,
         context,
       });
     }

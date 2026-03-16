@@ -18,6 +18,7 @@ import {
   ensureCommandResolvable,
   ensurePathInEnv,
   renderTemplate,
+  joinPromptSections,
   runChildProcess,
 } from "@paperclipai/adapter-utils/server-utils";
 import {
@@ -122,7 +123,6 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
   const workspaceBranch = asString(workspaceContext.branchName, "") || null;
   const workspaceRepoUrl = asString(workspaceContext.repoUrl, "") || null;
   const workspaceRepoRef = asString(workspaceContext.repoRef, "") || null;
-  const workspaceBranch = asString(workspaceContext.branchName, "") || null;
   const workspaceWorktreePath = asString(workspaceContext.worktreePath, "") || null;
   const agentHome = asString(workspaceContext.agentHome, "") || null;
   const workspaceHints = Array.isArray(context.paperclipWorkspaces)
@@ -385,8 +385,20 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     agent,
     run: { id: runId, source: "on_demand" },
     context,
-  });
-  const promptWithRuntimeNote = `${renderPaperclipRuntimeNote(env)}${prompt}`;
+  };
+  const renderedPrompt = renderTemplate(promptTemplate, templateData);
+  const renderedBootstrapPrompt =
+    !sessionId && bootstrapPromptTemplate.trim().length > 0
+      ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
+      : "";
+  const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
+  const runtimeNote = renderPaperclipRuntimeNote(env);
+  const promptWithRuntimeNote = joinPromptSections([
+    renderedBootstrapPrompt,
+    sessionHandoffNote,
+    runtimeNote,
+    renderedPrompt,
+  ]);
 
   const buildClaudeArgs = (resumeSessionId: string | null) => {
     const args = ["--print", "-", "--output-format", "stream-json", "--verbose"];
