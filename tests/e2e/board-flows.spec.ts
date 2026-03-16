@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { createAgent, createApproval, createCompany, createProject, listCompanies } from "./helpers";
 
 const suffix = Date.now().toString(36);
@@ -15,6 +15,7 @@ const seed: {
   primaryCompanyId?: string;
   primaryPrefix?: string;
   primaryCompanyName?: string;
+  secondaryCompanyId?: string;
   secondaryPrefix?: string;
   agentId?: string;
   projectId?: string;
@@ -24,6 +25,16 @@ const seed: {
 function requireSeedValue<T>(value: T | undefined, label: string): T {
   expect(value, `${label} should be seeded before this step`).toBeTruthy();
   return value as T;
+}
+
+async function expectSelectedCompanyId(page: Page, companyId: string) {
+  // The board root redirect reads the persisted selection on a fresh navigation,
+  // so wait for storage to update before asserting the destination route.
+  await expect
+    .poll(async () =>
+      await page.evaluate(() => window.localStorage.getItem("paperclip.selectedCompanyId")),
+    )
+    .toBe(companyId);
 }
 
 test.describe.serial("board UI flows", () => {
@@ -51,6 +62,7 @@ test.describe.serial("board UI flows", () => {
       name: secondaryCompanyName,
       description: "Verify switching and route synchronization.",
     });
+    seed.secondaryCompanyId = secondaryCompany.id as string;
     seed.secondaryPrefix = secondaryCompany.issuePrefix as string;
 
     const createdAgent = await createAgent(request, seed.primaryCompanyId, {
@@ -82,6 +94,7 @@ test.describe.serial("board UI flows", () => {
     await page.reload();
     await page.goto("/companies");
     await page.getByRole("button", { name: new RegExp(secondaryCompanyName) }).click();
+    await expectSelectedCompanyId(page, requireSeedValue(seed.secondaryCompanyId, "secondary company id"));
     await page.goto("/");
     await expect(page).toHaveURL(new RegExp(`/${seed.secondaryPrefix}/dashboard$`));
     await expect(
@@ -90,6 +103,7 @@ test.describe.serial("board UI flows", () => {
 
     await page.goto("/companies");
     await page.getByRole("button", { name: new RegExp(primaryCompanyName) }).click();
+    await expectSelectedCompanyId(page, requireSeedValue(seed.primaryCompanyId, "primary company id"));
     await page.goto("/");
     await expect(page).toHaveURL(new RegExp(`/${seed.primaryPrefix}/dashboard$`));
   });

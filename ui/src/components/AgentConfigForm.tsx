@@ -208,16 +208,27 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   /** Read effective value: overlay if dirty, else original */
   function eff<T>(group: keyof Omit<Overlay, "adapterType">, field: string, original: T): T {
     const o = overlay[group];
-    if (field in o) return o[field] as T;
+    if (field in o) {
+      const next = o[field];
+      return next === undefined ? original : next as T;
+    }
     return original;
   }
 
   /** Mark field dirty in overlay */
   function mark(group: keyof Omit<Overlay, "adapterType">, field: string, value: unknown) {
-    setOverlay((prev) => ({
-      ...prev,
-      [group]: { ...prev[group], [field]: value },
-    }));
+    setOverlay((prev) => {
+      const nextGroup = { ...prev[group] };
+      if (value === undefined) {
+        delete nextGroup[field];
+      } else {
+        nextGroup[field] = value;
+      }
+      return {
+        ...prev,
+        [group]: nextGroup,
+      };
+    });
   }
 
   /** Build accumulated patch and send to parent */
@@ -590,7 +601,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   onCommit={(v) =>
                     isCreate
                       ? set!({ cwd: v })
-                      : mark("adapterConfig", "cwd", v || undefined)
+                      : mark("adapterConfig", "cwd", v)
                   }
                   immediate
                   className="w-full bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40"
@@ -642,7 +653,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   onCommit={(v) =>
                     isCreate
                       ? set!({ command: v })
-                      : mark("adapterConfig", "command", v || undefined)
+                      : mark("adapterConfig", "command", v)
                   }
                   immediate
                   className={inputClass}
@@ -664,7 +675,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 onChange={(v) =>
                   isCreate
                     ? set!({ model: v })
-                    : mark("adapterConfig", "model", v || undefined)
+                    : mark("adapterConfig", "model", v)
                 }
                 open={modelOpen}
                 onOpenChange={setModelOpen}
@@ -686,7 +697,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 onChange={(v) =>
                   isCreate
                     ? set!({ thinkingEffort: v })
-                    : mark("adapterConfig", thinkingEffortKey, v || undefined)
+                    : mark("adapterConfig", thinkingEffortKey, v)
                 }
                 open={thinkingEffortOpen}
                 onOpenChange={setThinkingEffortOpen}
@@ -712,7 +723,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   onChange={(v) =>
                     isCreate
                       ? set!({ bootstrapPrompt: v })
-                      : mark("adapterConfig", "bootstrapPromptTemplate", v || undefined)
+                      : mark("adapterConfig", "bootstrapPromptTemplate", v)
                   }
                   placeholder="Optional initial setup prompt for the first run"
                   contentClassName="min-h-[44px] text-sm font-mono"
@@ -739,7 +750,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   onCommit={(v) =>
                     isCreate
                       ? set!({ extraArgs: v })
-                      : mark("adapterConfig", "extraArgs", v ? parseCommaArgs(v) : undefined)
+                      : mark("adapterConfig", "extraArgs", parseCommaArgs(v))
                   }
                   immediate
                   className={inputClass}

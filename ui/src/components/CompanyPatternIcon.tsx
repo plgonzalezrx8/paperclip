@@ -90,6 +90,8 @@ function hexToHue(hex: string): number {
 
 function makeCompanyPatternDataUrl(seed: string, brandColor?: string | null, logicalSize = 22, cellSize = 2): string {
   if (typeof document === "undefined") return "";
+  // JSDOM ships a stub canvas API that logs noisy "not implemented" warnings during static renders.
+  if (typeof navigator !== "undefined" && /\bjsdom\b/i.test(navigator.userAgent)) return "";
 
   const canvas = document.createElement("canvas");
   canvas.width = logicalSize * cellSize;
