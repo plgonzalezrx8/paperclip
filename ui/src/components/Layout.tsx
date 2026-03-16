@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type UIEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Moon, Sun } from "lucide-react";
-import { Outlet, useLocation, useNavigate, useParams } from "@/lib/router";
+import { BookOpen, Moon, Settings, Sun } from "lucide-react";
+import { Link, Outlet, useLocation, useNavigate, useParams } from "@/lib/router";
 import { CompanyRail } from "./CompanyRail";
 import { Sidebar } from "./Sidebar";
-import { SidebarNavItem } from "./SidebarNavItem";
+import { InstanceSidebar } from "./InstanceSidebar";
 import { BreadcrumbBar } from "./BreadcrumbBar";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { CommandPalette } from "./CommandPalette";
@@ -14,6 +14,7 @@ import { NewGoalDialog } from "./NewGoalDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { ToastViewport } from "./ToastViewport";
 import { MobileBottomNav } from "./MobileBottomNav";
+import { WorktreeBanner } from "./WorktreeBanner";
 import { useDialog } from "../context/DialogContext";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
@@ -22,23 +23,72 @@ import { useTheme } from "../context/ThemeContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
 import { healthApi } from "../api/health";
+import { shouldSyncCompanySelectionFromRoute } from "../lib/company-selection";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
+import { NotFoundPage } from "../pages/NotFound";
 import { Button } from "@/components/ui/button";
+
+const INSTANCE_SETTINGS_MEMORY_KEY = "paperclip.lastInstanceSettingsPath";
+const DEFAULT_INSTANCE_SETTINGS_PATH = "/instance/settings/heartbeats";
+
+function normalizeRememberedInstanceSettingsPath(rawPath: string | null): string {
+  if (!rawPath) return DEFAULT_INSTANCE_SETTINGS_PATH;
+
+  const match = rawPath.match(/^([^?#]*)(\?[^#]*)?(#.*)?$/);
+  const pathname = match?.[1] ?? rawPath;
+  const search = match?.[2] ?? "";
+  const hash = match?.[3] ?? "";
+
+  if (pathname === "/instance/settings/heartbeats" || pathname === "/instance/settings/plugins") {
+    return `${pathname}${search}${hash}`;
+  }
+
+  if (/^\/instance\/settings\/plugins\/[^/?#]+$/.test(pathname)) {
+    return `${pathname}${search}${hash}`;
+  }
+
+  return DEFAULT_INSTANCE_SETTINGS_PATH;
+}
+
+function readRememberedInstanceSettingsPath(): string {
+  if (typeof window === "undefined") return DEFAULT_INSTANCE_SETTINGS_PATH;
+  try {
+    return normalizeRememberedInstanceSettingsPath(window.localStorage.getItem(INSTANCE_SETTINGS_MEMORY_KEY));
+  } catch {
+    return DEFAULT_INSTANCE_SETTINGS_PATH;
+  }
+}
 
 export function Layout() {
   const { sidebarOpen, setSidebarOpen, toggleSidebar, isMobile } = useSidebar();
   const { openNewIssue, openOnboarding } = useDialog();
   const { togglePanelVisible } = usePanel();
-  const { companies, loading: companiesLoading, selectedCompanyId, setSelectedCompanyId } = useCompany();
+  const {
+    companies,
+    loading: companiesLoading,
+    selectedCompany,
+    selectedCompanyId,
+    selectionSource,
+    setSelectedCompanyId,
+  } = useCompany();
   const { theme, toggleTheme } = useTheme();
   const { companyPrefix } = useParams<{ companyPrefix: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const isInstanceSettingsRoute = location.pathname.startsWith("/instance/");
   const onboardingTriggered = useRef(false);
   const lastMainScrollTop = useRef(0);
   const [mobileNavVisible, setMobileNavVisible] = useState(true);
+  const [instanceSettingsTarget, setInstanceSettingsTarget] = useState<string>(() => readRememberedInstanceSettingsPath());
   const nextTheme = theme === "dark" ? "light" : "dark";
+  const matchedCompany = useMemo(() => {
+    if (!companyPrefix) return null;
+    const requestedPrefix = companyPrefix.toUpperCase();
+    return companies.find((company) => company.issuePrefix.toUpperCase() === requestedPrefix) ?? null;
+  }, [companies, companyPrefix]);
+  const hasUnknownCompanyPrefix =
+    Boolean(companyPrefix) && !companiesLoading && companies.length > 0 && !matchedCompany;
   const { data: health } = useQuery({
     queryKey: queryKeys.health,
     queryFn: () => healthApi.get(),
@@ -57,48 +107,45 @@ export function Layout() {
   useEffect(() => {
     if (!companyPrefix || companiesLoading || companies.length === 0) return;
 
-    const requestedPrefix = companyPrefix.toUpperCase();
-    const matched = companies.find((company) => company.issuePrefix.toUpperCase() === requestedPrefix);
-
-    if (!matched) {
-      const fallback =
-        (selectedCompanyId ? companies.find((company) => company.id === selectedCompanyId) : null)
-        ?? companies[0]!;
-      navigate(`/${fallback.issuePrefix}/dashboard`, { replace: true });
+    if (!matchedCompany) {
+      const fallback = (selectedCompanyId ? companies.find((company) => company.id === selectedCompanyId) : null)
+        ?? companies[0]
+        ?? null;
+      if (fallback && selectedCompanyId !== fallback.id) {
+        setSelectedCompanyId(fallback.id, { source: "route_sync" });
+      }
       return;
     }
 
-    if (companyPrefix !== matched.issuePrefix) {
+    if (companyPrefix !== matchedCompany.issuePrefix) {
       const suffix = location.pathname.replace(/^\/[^/]+/, "");
-      navigate(`/${matched.issuePrefix}${suffix}${location.search}`, { replace: true });
+      navigate(`/${matchedCompany.issuePrefix}${suffix}${location.search}`, { replace: true });
       return;
     }
 
-    if (selectedCompanyId !== matched.id) {
-      setSelectedCompanyId(matched.id, { source: "route_sync" });
+    if (
+      shouldSyncCompanySelectionFromRoute({
+        selectionSource,
+        selectedCompanyId,
+        routeCompanyId: matchedCompany.id,
+      })
+    ) {
+      setSelectedCompanyId(matchedCompany.id, { source: "route_sync" });
     }
   }, [
     companyPrefix,
     companies,
     companiesLoading,
+    matchedCompany,
     location.pathname,
     location.search,
     navigate,
+    selectionSource,
     selectedCompanyId,
     setSelectedCompanyId,
   ]);
 
   const togglePanel = togglePanelVisible;
-
-  // Cmd+1..9 to switch companies
-  const switchCompany = useCallback(
-    (index: number) => {
-      if (index < companies.length) {
-        setSelectedCompanyId(companies[index]!.id);
-      }
-    },
-    [companies, setSelectedCompanyId],
-  );
 
   useCompanyPageMemory();
 
@@ -106,7 +153,6 @@ export function Layout() {
     onNewIssue: () => openNewIssue(),
     onToggleSidebar: toggleSidebar,
     onTogglePanel: togglePanel,
-    onSwitchCompany: switchCompany,
   });
 
   useEffect(() => {
@@ -163,25 +209,63 @@ export function Layout() {
     };
   }, [isMobile, sidebarOpen, setSidebarOpen]);
 
-  const handleMainScroll = useCallback(
-    (event: UIEvent<HTMLElement>) => {
-      if (!isMobile) return;
+  const updateMobileNavVisibility = useCallback((currentTop: number) => {
+    const delta = currentTop - lastMainScrollTop.current;
 
-      const currentTop = event.currentTarget.scrollTop;
-      const delta = currentTop - lastMainScrollTop.current;
+    if (currentTop <= 24) {
+      setMobileNavVisible(true);
+    } else if (delta > 8) {
+      setMobileNavVisible(false);
+    } else if (delta < -8) {
+      setMobileNavVisible(true);
+    }
 
-      if (currentTop <= 24) {
-        setMobileNavVisible(true);
-      } else if (delta > 8) {
-        setMobileNavVisible(false);
-      } else if (delta < -8) {
-        setMobileNavVisible(true);
-      }
+    lastMainScrollTop.current = currentTop;
+  }, []);
 
-      lastMainScrollTop.current = currentTop;
-    },
-    [isMobile],
-  );
+  useEffect(() => {
+    if (!isMobile) {
+      setMobileNavVisible(true);
+      lastMainScrollTop.current = 0;
+      return;
+    }
+
+    const onScroll = () => {
+      updateMobileNavVisibility(window.scrollY || document.documentElement.scrollTop || 0);
+    };
+
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, [isMobile, updateMobileNavVisibility]);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+
+    document.body.style.overflow = isMobile ? "visible" : "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (!location.pathname.startsWith("/instance/settings/")) return;
+
+    const nextPath = normalizeRememberedInstanceSettingsPath(
+      `${location.pathname}${location.search}${location.hash}`,
+    );
+    setInstanceSettingsTarget(nextPath);
+
+    try {
+      window.localStorage.setItem(INSTANCE_SETTINGS_MEMORY_KEY, nextPath);
+    } catch {
+      // Ignore storage failures in restricted environments.
+    }
+  }, [location.hash, location.pathname, location.search]);
 
   return (
     <div className="relative flex h-dvh overflow-hidden bg-background pt-[env(safe-area-inset-top)] text-foreground">
@@ -247,8 +331,16 @@ export function Layout() {
                 sidebarOpen ? "w-64 opacity-100" : "w-0 opacity-0",
               )}
             >
-              <Sidebar />
-            </div>
+              {hasUnknownCompanyPrefix ? (
+                <NotFoundPage
+                  scope="invalid_company_prefix"
+                  requestedPrefix={companyPrefix ?? selectedCompany?.issuePrefix}
+                />
+              ) : (
+                <Outlet />
+              )}
+            </main>
+            <PropertiesPanel />
           </div>
           <div className="paperclip-panel mt-2 rounded-[calc(var(--radius)+0.4rem)] border px-3 py-2">
             <div className="flex items-center gap-1">

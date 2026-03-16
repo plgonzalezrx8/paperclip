@@ -15,6 +15,7 @@ export interface ProjectWorkspace {
   repoRef: string | null;
   metadata: Record<string, unknown> | null;
   isPrimary: boolean;
+  runtimeServices?: WorkspaceRuntimeService[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -70,6 +71,7 @@ export interface Project {
   leadAgentId: string | null;
   targetDate: string | null;
   color: string | null;
+  executionWorkspacePolicy: ProjectExecutionWorkspacePolicy | null;
   workspaces: ProjectWorkspace[];
   primaryWorkspace: ProjectWorkspace | null;
   milestones?: ProjectMilestone[];
