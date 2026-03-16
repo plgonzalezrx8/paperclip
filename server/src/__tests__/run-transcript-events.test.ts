@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parseStructuredStdoutLine } from "../services/run-transcript-events.js";
+import {
+  consumeChunkLines,
+  parseStructuredStdoutLine,
+  stderrLinesToRunEvents,
+} from "../services/run-transcript-events.js";
 
 describe("run transcript event parsing", () => {
   it("normalizes codex command execution events into structured run events", () => {
@@ -70,5 +74,36 @@ describe("run transcript event parsing", () => {
 
   it("falls back cleanly when an adapter does not have a structured parser", () => {
     expect(parseStructuredStdoutLine("process", "plain stdout", "2026-03-14T12:00:00.000Z")).toEqual([]);
+  });
+
+  it("keeps stderr lines intact when chunks split mid-line", () => {
+    let buffer = "";
+    const emittedMessages: string[] = [];
+
+    const firstChunk = consumeChunkLines("Workspace bootstrap fai", buffer);
+    buffer = firstChunk.remainder;
+    emittedMessages.push(
+      ...stderrLinesToRunEvents(firstChunk.lines).map((event) => event.message ?? ""),
+    );
+
+    const secondChunk = consumeChunkLines(
+      "led because pnpm is missing\nTry installing pnpm\nTrailing partial",
+      buffer,
+    );
+    buffer = secondChunk.remainder;
+    emittedMessages.push(
+      ...stderrLinesToRunEvents(secondChunk.lines).map((event) => event.message ?? ""),
+    );
+
+    const trailing = buffer.trim();
+    if (trailing) {
+      emittedMessages.push(...stderrLinesToRunEvents([trailing]).map((event) => event.message ?? ""));
+    }
+
+    expect(emittedMessages).toEqual([
+      "Workspace bootstrap failed because pnpm is missing",
+      "Try installing pnpm",
+      "Trailing partial",
+    ]);
   });
 });

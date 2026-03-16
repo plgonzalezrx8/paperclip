@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { deriveIssueUserContext, shouldReleaseIssueCheckouts } from "../services/issues.ts";
+import {
+  deriveIssueUserContext,
+  normalizeIssuePageFilters,
+  shouldReleaseIssueCheckouts,
+} from "../services/issues.ts";
 
 function makeIssue(overrides?: Partial<{
   createdByUserId: string | null;
@@ -166,5 +170,29 @@ describe("shouldReleaseIssueCheckouts", () => {
         { status: "in_progress", assigneeAgentId: null, assigneeUserId: "user-1" },
       ),
     ).toBe(false);
+  });
+});
+
+describe("normalizeIssuePageFilters", () => {
+  it("defaults the paginated issues view to page 1, 50 items, and a 48 hour terminal cutoff", () => {
+    expect(normalizeIssuePageFilters()).toMatchObject({
+      page: 1,
+      pageSize: 50,
+      terminalAgeHours: 48,
+    });
+  });
+
+  it("preserves the explicit all-terminal override while sanitizing page inputs", () => {
+    expect(
+      normalizeIssuePageFilters({
+        page: 0,
+        pageSize: 500,
+        terminalAgeHours: null,
+      }),
+    ).toMatchObject({
+      page: 1,
+      pageSize: 100,
+      terminalAgeHours: null,
+    });
   });
 });

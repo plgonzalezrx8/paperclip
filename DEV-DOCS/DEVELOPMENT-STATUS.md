@@ -1,6 +1,6 @@
 # Development Status
 
-Last updated: 2026-03-11
+Last updated: 2026-03-16
 
 ## Current feature status
 
@@ -33,6 +33,37 @@ Last updated: 2026-03-11
   - heartbeat run list responses use trimmed operator-facing summaries
   - child-process env hardening strips nested Claude env leakage
   - Windows/local adapter wrapper handling is more robust
+- Assignee filter helpers and regression coverage: `done`
+  - `ui/src/lib/issues-list.ts` now owns shared assignee filtering, grouping labels, and group-derived new-issue defaults
+  - tests cover agent, explicit-user, `Me`, and unassigned assignee filters
+- Redaction edge-case follow-up: `done`
+  - operator-facing text redaction no longer rewrites sibling paths that only share a home-dir prefix
+  - exact home-dir roots still collapse to `~` when surrounded by punctuation or quotes
+- Repo-backed checkout bootstrap and review handoff: `done`
+  - `heartbeatService` now bootstraps Node dependencies inside isolated repo checkouts with lockfile-aware package-manager selection
+  - local adapters receive checkout env including checkout id, branch, repo URL, and repo ref
+  - repo-backed agent handoffs to `in_review` / `done` must include `reviewSubmission`, and the checkout row persists branch/commit/PR metadata
+- Structured run observability: `done`
+  - supported local adapters now persist structured `heartbeat_run_events` alongside raw run logs
+  - agent-detail transcripts and the Events panel prefer structured events when they exist and fall back to raw log parsing for older runs
+- OpenClaw gateway create flow: `done`
+  - create mode now exposes the gateway auth token, Paperclip API URL override, role, scopes, wait timeout, and session strategy/session key fields
+  - the create-form serializer now emits the server-required gateway header shape, including `headers.x-openclaw-token`
+- OpenClaw gateway URL normalization: `done`
+  - create-mode URL fields now trim surrounding whitespace before adapter config serialization
+- Roadmap item lifecycle controls: `done`
+  - roadmap detail now exposes inline status changes, add-child, and delete actions without depending on the side panel
+  - roadmap deletion now fails with dependency-aware conflict copy when child goals, linked projects, linked issues, or historical cost records still reference the item
+  - roadmap board lane menus and delete-modal behavior are restored on `development`
+- Paginated top-level issues page: `done`
+  - `/api/companies/:companyId/issues/page` adds explicit page/sort/terminal-age query validation while keeping the older array route stable for existing consumers
+  - `/issues` now persists filters and pagination in the URL, supports sorting, trims older terminal issues by default, and recovers gracefully when the selected page goes out of range
+- Transcript chunk preservation and repo review fallback: `done`
+  - structured transcript ingestion now buffers partial stdout/stderr lines across stream chunks instead of dropping or merging them incorrectly
+  - repo-backed review handoff can now materialize a fallback `workspace_checkouts` row when metadata must be persisted but no active checkout row exists yet
+- Coverage and browser verification gates: `done`
+  - PR verification now runs `pnpm test:coverage`, installs Playwright Chromium, and runs `pnpm test:e2e`
+  - the repo now has dedicated `test:unit`, `test:coverage`, and `test:e2e` command guidance
 - Runs and configuration UX: `done`
   - reusable transcript renderer with `nice` / `raw` modes
   - agent runs remain a first-class detail surface
@@ -46,13 +77,15 @@ Last updated: 2026-03-11
   - `paperclipai doctor --launch-history` shows pinned profile and recent launches
 - Documentation sync: `done`
   - startup docs now describe repo-local profiles and launch history
+  - dev docs now describe repo-backed checkout bootstrap, review handoff metadata, and structured run events
   - CLI/database docs now use resolved-instance path formulas
   - architecture, map, and infrastructure docs reflect the new startup model
 
 ## Branch state
 
-- Active branch in this workspace: `development`
-- Working tree contains the roadmap/health/governance implementation plus selective upstream adoption for startup safety, transcript UX, and hardening.
+- Active integration branch: `development`
+- Docs sync branch: `documentation-update`
+- Current working baseline contains the roadmap/health/governance implementation plus selective upstream adoption for startup safety, transcript UX, the March 14 redaction/issues-list follow-up hardening, roadmap item lifecycle controls, top-level issues pagination, repo-backed review handoff fallback persistence, and the OpenClaw gateway create-form fixes.
 
 ## Primary gap
 
@@ -66,7 +99,7 @@ Product-level gaps still remain:
 - roadmap quality determines whether idle managers pick useful next work
 - manager-plan approvals govern the workflow, but plan quality is still prompt-driven
 - checkout cleanup and wider attribution auditing remain separate hardening work
-- worktree/runtime migration remains deferred and needs design work before adoption
+- broader worktree/runtime migration remains deferred beyond the current checkout bootstrap and review-handoff contract
 - Gemini adapter support remains deferred
 
 ## Current blockers
@@ -76,7 +109,7 @@ Product-level gaps still remain:
   - Batch 1 server condensation has not started yet
   - physical checkout cleanup/reaping is still light
   - attribution auditing across every mutation path still deserves a deeper sweep
-  - operator UX could use browser QA for the new transcript/config/startup flows
+  - operator UX could use browser QA for the new transcript/config/startup flows and repo-backed review handoffs
 
 ## Verification posture
 
@@ -84,12 +117,11 @@ Definition of done for the current branch remains:
 
 ```bash
 pnpm -r typecheck
-pnpm test:run
+pnpm test:coverage
+pnpm test:e2e
 pnpm build
 ```
 
 Verified on this branch:
 
-- `pnpm -r typecheck`
-- `pnpm test:run`
-- `pnpm build`
+- Documentation sync only in this session; full verification has not been re-run yet.

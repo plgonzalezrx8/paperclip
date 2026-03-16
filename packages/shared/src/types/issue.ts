@@ -2,6 +2,9 @@ import type { IssuePriority, IssueStatus } from "../constants.js";
 import type { Goal } from "./goal.js";
 import type { Project, ProjectWorkspace } from "./project.js";
 
+export type IssuePageSortField = "updated" | "created" | "priority" | "title" | "status";
+export type IssuePageSortDirection = "asc" | "desc";
+
 export interface IssueAncestorProject {
   id: string;
   name: string;
@@ -59,6 +62,17 @@ export interface IssueReviewSubmission {
   pullRequestTitle?: string | null;
 }
 
+export interface IssueActiveRun {
+  id: string;
+  status: string;
+  agentId: string;
+  invocationSource: string;
+  triggerDetail: string | null;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  createdAt: Date;
+}
+
 export interface Issue {
   id: string;
   companyId: string;
@@ -93,6 +107,7 @@ export interface Issue {
   project?: Project | null;
   goal?: Goal | null;
   mentionedProjects?: Project[];
+  activeRun?: IssueActiveRun | null;
   myLastTouchAt?: Date | null;
   lastExternalCommentAt?: Date | null;
   isUnreadForMe?: boolean;
@@ -128,4 +143,12 @@ export interface IssueAttachment {
   createdAt: Date;
   updatedAt: Date;
   contentPath: string;
+}
+
+export interface IssuePageResult {
+  items: Issue[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
 }

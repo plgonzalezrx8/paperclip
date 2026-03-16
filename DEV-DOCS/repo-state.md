@@ -1,6 +1,6 @@
 # Repository State Snapshot (Verified)
 
-Date: 2026-03-10
+Date: 2026-03-16
 
 ## Monorepo + tooling
 
@@ -26,7 +26,9 @@ Top-level scripts (`package.json`):
   - `pnpm build`
   - `pnpm typecheck`
   - `pnpm test`
-  - `pnpm test:run`
+  - `pnpm test:unit`
+  - `pnpm test:coverage`
+  - `pnpm test:e2e`
 - DB:
   - `pnpm db:generate`
   - `pnpm db:migrate`
@@ -74,6 +76,11 @@ If the app "looks fine" but the shape is unclear, this is the current mental mod
   - backed by the existing `goals` model
   - grouped by `now / next / later`
   - carries manager-facing guidance text
+  - goal detail now supports inline status changes, add-child, and guarded delete flows
+- `/issues`
+  - top-level issue work queue now uses a dedicated paginated API contract
+  - URL-backed filters cover status, assignee, project, search, sort, and terminal-age trimming
+  - default page size is 25 and older terminal issues trim after 48h unless explicitly expanded
 - `/briefings/board`
   - new executive board added in the recent merge
   - answers: outcomes landed, risks/blocks, decisions needed, project health, cost anomalies, executive rollups
@@ -95,11 +102,14 @@ If the app "looks fine" but the shape is unclear, this is the current mental mod
 - issue / approval / agent run detail pages
   - still part of the operational layer
   - now include "Promote to result" entry points so execution artifacts can become durable outputs
-  - agent run detail also exposes persisted workspace-isolation metadata such as checkout path and branch
+  - agent run detail exposes persisted workspace-isolation metadata such as checkout path and branch
+  - agent run detail now prefers structured run events for transcript/event rendering when a local adapter emits them, including chunked transcript lines that are now buffered correctly
+  - repo-backed review handoffs can attach branch/commit/PR metadata to the issue comment and active checkout row, even when the checkout row has to be materialized lazily during handoff
 - `/company/settings`
   - includes default manager planning mode
 - agent create/edit/detail surfaces
   - include manager planning mode override and resolved planning mode visibility
+  - `openclaw_gateway` create mode now exposes the full gateway config, not only the base URL
 
 ## Recent architecture additions now present in code
 
@@ -121,6 +131,7 @@ The repository now includes a durable executive-record layer in addition to goal
   - explicit health and pricing-state enums
   - explicit manager planning mode enums
   - subsystem health response types
+  - issue review-submission metadata for repo-backed handoff
 - Server routes:
   - company-scoped CRUD/list routes for plans, results, and briefings
   - board summary endpoint at `/api/companies/:companyId/briefings/board`
@@ -154,6 +165,13 @@ The current governance chain is:
 - top-level agent issue creation enforces `approvalId` when the resolved mode is `approval_required`
 
 The old goal links are still the storage backbone for roadmap ancestry and project linkage.
+
+## Repo-backed execution contract now present in code
+
+- `heartbeatService` bootstraps Node dependencies inside isolated repo checkouts before local adapter execution when a lockfile and `package.json` are present
+- bootstrap state is cached in `workspace_checkouts.metadata.workspaceBootstrap`
+- local adapters receive checkout env including checkout id, branch, repo URL, and repo ref
+- issue updates to `in_review` / `done` now accept `reviewSubmission` so repo-backed handoffs can persist branch/PR metadata for the reviewer
 
 ## Security/runtime corrections included in the merged feature work
 

@@ -276,8 +276,17 @@ export function NewIssueDialog() {
   const createIssue = useMutation({
     mutationFn: ({ companyId, ...data }: { companyId: string } & Record<string, unknown>) =>
       issuesApi.create(companyId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(effectiveCompanyId!) });
+    onSuccess: (_issue, variables) => {
+      const companyId = variables.companyId;
+      // Refresh both the legacy issue lists and the paginated issues surface so
+      // the board reflects a newly created issue immediately.
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) }),
+        queryClient.invalidateQueries({ queryKey: ["issues", companyId, "page"] }),
+        queryClient.refetchQueries({ queryKey: ["issues", companyId, "page"], type: "active" }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(companyId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(companyId) }),
+      ]);
       if (draftTimer.current) clearTimeout(draftTimer.current);
       clearDraft();
       reset();

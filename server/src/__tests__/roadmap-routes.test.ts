@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { conflict } from "../errors.js";
 import { goalRoutes } from "../routes/goals.js";
 import { errorHandler } from "../middleware/index.js";
 
@@ -29,7 +30,8 @@ function createGoal(overrides: Record<string, unknown> = {}) {
     parentId: null,
     title: "Harden manager planning",
     description: "Give managers a roadmap-backed backlog source.",
-    guidance: "Create issues from this item only after validating the current sprint is clear.",
+    guidance:
+      "Create issues from this item only after validating the current sprint is clear.",
     level: "company",
     status: "planned",
     planningHorizon: "next",
@@ -96,7 +98,7 @@ describe("roadmap aliases", () => {
         title: "Operational health dashboard",
         planningHorizon: "now",
         sortOrder: 1,
-      }),
+      })
     );
     const app = createApp();
 
@@ -117,14 +119,52 @@ describe("roadmap aliases", () => {
       expect.objectContaining({
         planningHorizon: "now",
         sortOrder: 1,
-      }),
+      })
     );
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         action: "goal.created",
         entityId: GOAL_ID,
-      }),
+      })
     );
+  });
+
+  it("deletes roadmap items through the roadmap item alias", async () => {
+    mockGoalService.getById.mockResolvedValue(createGoal());
+    mockGoalService.remove.mockResolvedValue(createGoal());
+    const app = createApp();
+
+    const res = await request(app).delete(`/api/roadmap/${GOAL_ID}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(GOAL_ID);
+    expect(mockGoalService.getById).toHaveBeenCalledWith(GOAL_ID);
+    expect(mockGoalService.remove).toHaveBeenCalledWith(GOAL_ID);
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "goal.deleted",
+        entityId: GOAL_ID,
+      })
+    );
+  });
+
+  it("surfaces friendly conflict copy when roadmap deletion is blocked", async () => {
+    mockGoalService.getById.mockResolvedValue(createGoal());
+    mockGoalService.remove.mockRejectedValue(
+      conflict(
+        "Roadmap item cannot be deleted while child roadmap items and linked projects still reference it. Clear those dependencies or set this roadmap item to cancelled instead."
+      )
+    );
+    const app = createApp();
+
+    const res = await request(app).delete(`/api/roadmap/${GOAL_ID}`);
+
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({
+      error:
+        "Roadmap item cannot be deleted while child roadmap items and linked projects still reference it. Clear those dependencies or set this roadmap item to cancelled instead.",
+    });
   });
 });
