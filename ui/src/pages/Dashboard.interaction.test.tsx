@@ -89,14 +89,17 @@ vi.mock("../components/Identity", () => ({
 vi.mock("../api/dashboard", () => ({
   dashboardApi: {
     summary: vi.fn().mockResolvedValue({
-      agents: { running: 0, idle: 2, paused: 1 },
-      tasks: { open: 8, inProgress: 3, blocked: 1 },
+      companyId: "company-1",
+      agents: { active: 2, running: 0, paused: 1, error: 0 },
+      tasks: { open: 8, inProgress: 3, blocked: 1, done: 4 },
       approvals: { pending: 2 },
       costs: {
         monthSpendCents: 1234,
         monthBudgetCents: 10000,
         monthUtilizationPercent: 12,
       },
+      pendingApprovals: 2,
+      staleTasks: 1,
     }),
   },
 }));
