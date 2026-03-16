@@ -3,7 +3,6 @@ import { useNavigate, useParams } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   GOAL_STATUSES,
-  type GoalPlanningHorizon,
   type GoalStatus,
 } from "@paperclipai/shared";
 import { ChevronDown, Plus, Trash2 } from "lucide-react";
@@ -18,18 +17,23 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { GoalProperties } from "../components/GoalProperties";
 import { GoalTree } from "../components/GoalTree";
+import { RoadmapLaneMenu } from "../components/RoadmapLaneMenu";
 import { StatusBadge } from "../components/StatusBadge";
 import { InlineEditor } from "../components/InlineEditor";
 import { EntityRow } from "../components/EntityRow";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { cn, projectUrl } from "../lib/utils";
+import {
+  getGoalStatusLabel,
+  getRoadmapLane,
+  getRoadmapLaneLabel,
+} from "../lib/roadmap";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogClose,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -39,12 +43,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-const ROADMAP_HORIZON_LABELS: Record<GoalPlanningHorizon, string> = {
-  now: "Now",
-  next: "Next",
-  later: "Later",
-};
 
 function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof ApiError) return error.message;
@@ -114,7 +112,7 @@ function GoalStatusPicker({
           <span className="uppercase tracking-wide text-muted-foreground">
             Status
           </span>
-          <StatusBadge status={status} />
+          <StatusBadge status={status} label={getGoalStatusLabel(status)} />
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
         </button>
       </PopoverTrigger>
@@ -133,7 +131,10 @@ function GoalStatusPicker({
               setOpen(false);
             }}
           >
-            <StatusBadge status={goalStatus} />
+            <StatusBadge
+              status={goalStatus}
+              label={getGoalStatusLabel(goalStatus)}
+            />
           </button>
         ))}
       </PopoverContent>
@@ -182,12 +183,17 @@ export function GoalDetail() {
     setSelectedCompanyId(goal.companyId, { source: "route_sync" });
   }, [goal?.companyId, selectedCompanyId, setSelectedCompanyId]);
 
-  const updateGoal = useMutation({
-    mutationFn: (data: Record<string, unknown>) =>
-      goalsApi.update(goalId!, data),
-    onSuccess: () => {
+  const saveGoal = useMutation({
+    mutationFn: ({
+      targetGoalId,
+      data,
+    }: {
+      targetGoalId: string;
+      data: Record<string, unknown>;
+    }) => goalsApi.update(targetGoalId, data),
+    onSuccess: (_updatedGoal, variables) => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.goals.detail(goalId!),
+        queryKey: queryKeys.goals.detail(variables.targetGoalId),
       });
       if (resolvedCompanyId) {
         queryClient.invalidateQueries({
@@ -196,6 +202,17 @@ export function GoalDetail() {
       }
     },
   });
+
+  function mutateGoal(
+    targetGoalId: string,
+    data: Record<string, unknown>,
+    callbacks?: {
+      onError?: (error: unknown) => void;
+      onSettled?: () => void;
+    }
+  ) {
+    saveGoal.mutate({ targetGoalId, data }, callbacks);
+  }
 
   const deleteGoal = useMutation({
     mutationFn: () => goalsApi.remove(goalId!),
@@ -261,7 +278,7 @@ export function GoalDetail() {
       openPanel(
         <GoalProperties
           goal={goal}
-          onUpdate={(data) => updateGoal.mutate(data)}
+          onUpdate={(data) => mutateGoal(goal.id, data)}
         />
       );
     }
@@ -271,7 +288,8 @@ export function GoalDetail() {
   function handleStatusChange(status: GoalStatus) {
     setStatusError(null);
     setIsStatusSaving(true);
-    updateGoal.mutate(
+    mutateGoal(
+      goalId!,
       { status },
       {
         onError: (mutationError) => {
@@ -312,9 +330,29 @@ export function GoalDetail() {
             <span className="text-xs uppercase text-muted-foreground">
               {goal.level}
             </span>
-            <span className="text-xs uppercase text-muted-foreground">
-              {ROADMAP_HORIZON_LABELS[goal.planningHorizon]}
-            </span>
+            <RoadmapLaneMenu
+              goal={goal}
+              disabled={isStatusSaving}
+              triggerLabel={`Lane: ${getRoadmapLaneLabel(getRoadmapLane(goal))}`}
+              align="start"
+              onMove={(data) => {
+                setStatusError(null);
+                setIsStatusSaving(true);
+                mutateGoal(goal.id, data, {
+                  onError: (mutationError) => {
+                    setStatusError(
+                      getErrorMessage(
+                        mutationError,
+                        "Failed to move roadmap item."
+                      )
+                    );
+                  },
+                  onSettled: () => {
+                    setIsStatusSaving(false);
+                  },
+                });
+              }}
+            />
             <GoalStatusPicker
               status={goal.status}
               disabled={isStatusSaving}
@@ -333,14 +371,14 @@ export function GoalDetail() {
 
         <InlineEditor
           value={goal.title}
-          onSave={(title) => updateGoal.mutate({ title })}
+          onSave={(title) => mutateGoal(goal.id, { title })}
           as="h2"
           className="paperclip-work-title"
         />
 
         <InlineEditor
           value={goal.description ?? ""}
-          onSave={(description) => updateGoal.mutate({ description })}
+          onSave={(description) => mutateGoal(goal.id, { description })}
           as="p"
           className="max-w-3xl text-sm text-muted-foreground"
           placeholder="Add a description..."
@@ -357,7 +395,7 @@ export function GoalDetail() {
           </p>
           <InlineEditor
             value={goal.guidance ?? ""}
-            onSave={(guidance) => updateGoal.mutate({ guidance })}
+            onSave={(guidance) => mutateGoal(goal.id, { guidance })}
             as="p"
             className="text-sm text-muted-foreground"
             placeholder="Describe how managers should use this roadmap item when deciding what to do next."
@@ -442,6 +480,15 @@ export function GoalDetail() {
             <GoalTree
               goals={childGoals}
               goalLink={(childGoal) => `/roadmap/${childGoal.id}`}
+              goalAction={(childGoal) => (
+                <RoadmapLaneMenu
+                  goal={childGoal}
+                  compact
+                  disabled={saveGoal.isPending}
+                  triggerLabel="Move"
+                  onMove={(data) => mutateGoal(childGoal.id, data)}
+                />
+              )}
             />
           )}
         </TabsContent>
@@ -475,30 +522,80 @@ export function GoalDetail() {
           }
         }}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete "{goal.title}"?</DialogTitle>
-            <DialogDescription>
-              This permanently removes the roadmap item. If related work should
-              stay visible, cancel the roadmap item instead of deleting it.
-            </DialogDescription>
+        <DialogContent
+          showCloseButton={false}
+          className="overflow-hidden p-0 sm:max-w-[30rem]"
+        >
+          <DialogHeader className="paperclip-panel-strong gap-3 border-b border-border px-5 py-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-2">
+                <p className="paperclip-kicker text-destructive">Danger zone</p>
+                <DialogTitle className="text-xl leading-tight">
+                  Delete "{goal.title}"?
+                </DialogTitle>
+                <DialogDescription className="max-w-[34ch] text-sm leading-relaxed">
+                  This permanently removes the roadmap item. If related work
+                  should stay visible, cancel the roadmap item instead of
+                  deleting it.
+                </DialogDescription>
+              </div>
+              <DialogClose asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="normal-case tracking-normal font-medium"
+                  disabled={deleteGoal.isPending}
+                  style={{
+                    fontFamily: "var(--font-body)",
+                    letterSpacing: "0.01em",
+                    textTransform: "none",
+                  }}
+                >
+                  <span className="sr-only">Close</span>
+                  ×
+                </Button>
+              </DialogClose>
+            </div>
           </DialogHeader>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline" disabled={deleteGoal.isPending}>
-                Keep roadmap item
+          <div className="space-y-4 px-5 py-5">
+            <div className="rounded-[calc(var(--radius)+0.15rem)] border border-destructive/30 bg-destructive/10 px-3 py-3 text-sm text-destructive">
+              This action cannot be undone.
+            </div>
+            {deleteError ? (
+              <p className="text-sm text-destructive">{deleteError}</p>
+            ) : null}
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <DialogClose asChild>
+                <Button
+                  variant="outline"
+                  disabled={deleteGoal.isPending}
+                  className="w-full normal-case tracking-normal font-medium sm:w-auto"
+                  style={{
+                    fontFamily: "var(--font-body)",
+                    letterSpacing: "0.01em",
+                    textTransform: "none",
+                  }}
+                >
+                  Keep roadmap item
+                </Button>
+              </DialogClose>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteConfirm}
+                disabled={deleteGoal.isPending}
+                className="w-full normal-case tracking-normal font-medium sm:w-auto"
+                style={{
+                  fontFamily: "var(--font-body)",
+                  letterSpacing: "0.01em",
+                  textTransform: "none",
+                }}
+              >
+                {deleteGoal.isPending
+                  ? "Deleting roadmap item…"
+                  : "Delete roadmap item permanently"}
               </Button>
-            </DialogClose>
-            <Button
-              variant="destructive"
-              onClick={handleDeleteConfirm}
-              disabled={deleteGoal.isPending}
-            >
-              {deleteGoal.isPending
-                ? "Deleting roadmap item…"
-                : "Delete roadmap item permanently"}
-            </Button>
-          </DialogFooter>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

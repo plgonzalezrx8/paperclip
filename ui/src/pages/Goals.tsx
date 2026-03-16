@@ -1,22 +1,17 @@
-import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { type GoalPlanningHorizon } from "@paperclipai/shared";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { goalsApi } from "../api/goals";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { GoalTree } from "../components/GoalTree";
+import { RoadmapLaneMenu } from "../components/RoadmapLaneMenu";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Target, Plus } from "lucide-react";
-
-const ROADMAP_SECTIONS: Array<{ id: GoalPlanningHorizon; title: string; description: string }> = [
-  { id: "now", title: "Now", description: "Current priorities and active strategic work." },
-  { id: "next", title: "Next", description: "Queued initiatives the managers should prepare for." },
-  { id: "later", title: "Later", description: "Longer-horizon bets and deferred opportunities." },
-];
+import { ROADMAP_LANES, getRoadmapLane } from "../lib/roadmap";
 
 function branchForGoal(goalId: string, goals: Array<{ id: string; parentId: string | null }>) {
   const collected = new Set<string>();
@@ -36,6 +31,9 @@ export function Goals() {
   const { selectedCompanyId } = useCompany();
   const { openNewGoal } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const queryClient = useQueryClient();
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [movingGoalId, setMovingGoalId] = useState<string | null>(null);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Roadmap" }]);
@@ -45,6 +43,23 @@ export function Goals() {
     queryKey: queryKeys.goals.list(selectedCompanyId!),
     queryFn: () => goalsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
+  });
+
+  const updateGoal = useMutation({
+    mutationFn: ({
+      goalId,
+      data,
+    }: {
+      goalId: string;
+      data: Record<string, unknown>;
+    }) => goalsApi.update(goalId, data),
+    onSuccess: () => {
+      if (selectedCompanyId) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.goals.list(selectedCompanyId),
+        });
+      }
+    },
   });
 
   if (!selectedCompanyId) {
@@ -68,9 +83,13 @@ export function Goals() {
               </p>
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            {ROADMAP_SECTIONS.map((section) => {
-              const count = (goals ?? []).filter((goal) => goal.planningHorizon === section.id).length;
+          <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-5">
+            {ROADMAP_LANES.map((section) => {
+              const goalIds = new Set((goals ?? []).map((goal) => goal.id));
+              const rootGoals = (goals ?? []).filter(
+                (goal) => !goal.parentId || !goalIds.has(goal.parentId)
+              );
+              const count = rootGoals.filter((goal) => getRoadmapLane(goal) === section.id).length;
               return (
                 <div key={section.id} className="paperclip-work-stat min-w-[8.5rem] px-4 py-3">
                   <p className="paperclip-work-label">{section.title}</p>
@@ -83,6 +102,7 @@ export function Goals() {
       </section>
 
       {error && <p className="text-sm text-destructive">{error.message}</p>}
+      {updateError ? <p className="text-sm text-destructive">{updateError}</p> : null}
 
       {goals && goals.length === 0 && (
         <EmptyState
@@ -105,12 +125,12 @@ export function Goals() {
             {(() => {
               const goalIds = new Set(goals.map((goal) => goal.id));
               const rootGoals = goals.filter((goal) => !goal.parentId || !goalIds.has(goal.parentId));
-              return ROADMAP_SECTIONS.map((section) => {
-                // A section owns the full branch for each root roadmap item in that horizon so
-                // descendants stay visually attached even when child nodes have mixed statuses.
+              return ROADMAP_LANES.map((section) => {
+                // A section owns the full branch for each root roadmap item so descendants stay
+                // visually attached even when child nodes have mixed lifecycle states.
                 const branchIds = new Set<string>();
                 for (const goal of rootGoals) {
-                  if (goal.planningHorizon !== section.id) continue;
+                  if (getRoadmapLane(goal) !== section.id) continue;
                   for (const id of branchForGoal(goal.id, goals)) branchIds.add(id);
                 }
                 const sectionGoals = goals.filter((goal) => branchIds.has(goal.id));
@@ -124,10 +144,42 @@ export function Goals() {
                     </div>
                     {sectionGoals.length === 0 ? (
                       <div className="rounded-[calc(var(--radius)+0.2rem)] border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">
-                        No roadmap items in this horizon.
+                        No roadmap items in this lane.
                       </div>
                     ) : (
-                      <GoalTree goals={sectionGoals} goalLink={(goal) => `/roadmap/${goal.id}`} />
+                      <GoalTree
+                        goals={sectionGoals}
+                        goalLink={(goal) => `/roadmap/${goal.id}`}
+                        goalAction={(goal) => (
+                          <RoadmapLaneMenu
+                            goal={goal}
+                            compact
+                            disabled={movingGoalId === goal.id}
+                            triggerLabel={movingGoalId === goal.id ? "Moving…" : "Move"}
+                            onMove={(data) => {
+                              setUpdateError(null);
+                              setMovingGoalId(goal.id);
+                              updateGoal.mutate(
+                                { goalId: goal.id, data },
+                                {
+                                  onError: (mutationError) => {
+                                    setUpdateError(
+                                      mutationError instanceof Error
+                                        ? mutationError.message
+                                        : "Failed to move roadmap item."
+                                    );
+                                  },
+                                  onSettled: () => {
+                                    setMovingGoalId((current) =>
+                                      current === goal.id ? null : current
+                                    );
+                                  },
+                                }
+                              );
+                            }}
+                          />
+                        )}
+                      />
                     )}
                   </section>
                 );

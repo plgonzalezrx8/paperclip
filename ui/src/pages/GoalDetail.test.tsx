@@ -193,6 +193,12 @@ vi.mock("../components/GoalTree", () => ({
   GoalTree: () => <div>Goal tree</div>,
 }));
 
+vi.mock("../components/RoadmapLaneMenu", () => ({
+  RoadmapLaneMenu: ({ triggerLabel }: { triggerLabel?: string }) => (
+    <button type="button">{triggerLabel ?? "Lane"}</button>
+  ),
+}));
+
 vi.mock("../components/InlineEditor", () => ({
   InlineEditor: ({ value, as = "div" }: { value: string; as?: string }) => {
     if (as === "h2") return <h2>{value}</h2>;
