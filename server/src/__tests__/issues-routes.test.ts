@@ -1,11 +1,13 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { conflict } from "../errors.js";
 import { errorHandler } from "../middleware/index.js";
 import { issueRoutes } from "../routes/issues.js";
 
 const mockIssueService = vi.hoisted(() => ({
   list: vi.fn(),
+  listPage: vi.fn(),
   getById: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
@@ -147,6 +149,17 @@ function createApproval(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function createIssuePageResult(overrides: Record<string, unknown> = {}) {
+  return {
+    items: [createIssue()],
+    page: 1,
+    pageSize: 50,
+    total: 1,
+    totalPages: 1,
+    ...overrides,
+  };
+}
+
 function createApp(actor: Record<string, unknown>) {
   const app = express();
   app.use(express.json());
@@ -163,6 +176,7 @@ describe("issue routes", () => {
   beforeEach(() => {
     mockIssueService.getById.mockReset();
     mockIssueService.list.mockReset();
+    mockIssueService.listPage.mockReset();
     mockIssueService.create.mockReset();
     mockIssueService.update.mockReset();
     mockIssueService.addComment.mockReset();
@@ -190,6 +204,7 @@ describe("issue routes", () => {
     mockIssueService.findMentionedAgents.mockResolvedValue([]);
     mockIssueService.assertCheckoutOwner.mockResolvedValue({});
     mockIssueService.list.mockResolvedValue([]);
+    mockIssueService.listPage.mockResolvedValue(createIssuePageResult({ items: [] }));
     mockIssueService.create.mockResolvedValue(
       createIssue({
         status: "backlog",
@@ -431,6 +446,74 @@ describe("issue routes", () => {
     );
   });
 
+  it("accepts repo review submissions even when the run has no active checkout row", async () => {
+    const existing = createIssue();
+    const updated = createIssue({
+      status: "in_review",
+      assigneeAgentId: null,
+      assigneeUserId: "board-user",
+      checkoutRunId: null,
+      updatedAt: new Date("2026-03-09T11:00:00.000Z"),
+    });
+    mockIssueService.getById.mockResolvedValue(existing);
+    mockIssueService.update.mockResolvedValue(updated);
+    mockIssueService.addComment.mockResolvedValue({
+      id: "comment-3",
+      issueId: ISSUE_ID,
+      body: "Ready for review.\n\n## Review Submission\n\n- Branch: codex/paperclip/agent-1/pap-12\n- Head commit: abc123\n- Pull request: https://github.com/paperclipai/paperclip/pull/42",
+      authorAgentId: "agent-1",
+      authorUserId: null,
+      createdAt: new Date("2026-03-09T11:00:00.000Z"),
+      updatedAt: new Date("2026-03-09T11:00:00.000Z"),
+    });
+    mockHeartbeatService.getActiveCheckoutForIssueAgent.mockResolvedValue(null);
+    mockHeartbeatService.recordReviewSubmission.mockResolvedValue({
+      id: "checkout-2",
+      issueId: ISSUE_ID,
+      agentId: "agent-1",
+      branchName: "codex/paperclip/agent-1/pap-12",
+      worktreePath: null,
+    });
+
+    const app = createApp({
+      type: "agent",
+      source: "agent_key",
+      companyId: COMPANY_ID,
+      agentId: "agent-1",
+      runId: "run-1",
+    });
+
+    const res = await request(app)
+      .patch(`/api/issues/${ISSUE_ID}`)
+      .send({
+        status: "done",
+        comment: "Ready for review.",
+        reviewSubmission: {
+          branchName: "codex/paperclip/agent-1/pap-12",
+          headCommitSha: "abc123",
+          pullRequestUrl: "https://github.com/paperclipai/paperclip/pull/42",
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(mockHeartbeatService.recordReviewSubmission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId: COMPANY_ID,
+        issueId: ISSUE_ID,
+        agentId: "agent-1",
+        checkoutId: null,
+        branchName: "codex/paperclip/agent-1/pap-12",
+        headCommitSha: "abc123",
+        pullRequestUrl: "https://github.com/paperclipai/paperclip/pull/42",
+      }),
+    );
+    expect(mockIssueService.addComment).toHaveBeenCalledWith(
+      ISSUE_ID,
+      expect.stringContaining("## Review Submission"),
+      { agentId: "agent-1", userId: undefined },
+    );
+  });
+
   it("rejects top-level issue creation without approval in approval-required mode", async () => {
     mockAgentService.getById.mockResolvedValueOnce(
       createAgent({ resolvedManagerPlanningMode: "approval_required" }),
@@ -577,5 +660,115 @@ describe("issue routes", () => {
         parentId: ISSUE_ID,
       }),
     );
+  });
+
+  it("parses paginated issue queries and forwards defaults and overrides", async () => {
+    mockIssueService.listPage.mockResolvedValueOnce(
+      createIssuePageResult({
+        items: [createIssue()],
+        page: 2,
+        pageSize: 20,
+        total: 3,
+        totalPages: 1,
+      }),
+    );
+    const app = createApp({
+      type: "board",
+      source: "local_implicit",
+      userId: "board-user",
+      isInstanceAdmin: true,
+    });
+
+    const res = await request(app)
+      .get(`/api/companies/${COMPANY_ID}/issues/page`)
+      .query({
+        status: "todo,done",
+        projectId: PROJECT_ID,
+        assigneeUserId: "me",
+        q: "review",
+        page: "2",
+        pageSize: "20",
+        sortField: "updated",
+        sortDir: "asc",
+        terminalAgeHours: "all",
+      });
+
+    expect(res.status).toBe(200);
+    expect(mockIssueService.listPage).toHaveBeenCalledWith(
+      COMPANY_ID,
+      expect.objectContaining({
+        status: "todo,done",
+        projectId: PROJECT_ID,
+        assigneeUserId: "board-user",
+        q: "review",
+        page: 2,
+        pageSize: 20,
+        sortField: "updated",
+        sortDir: "asc",
+        terminalAgeHours: null,
+      }),
+    );
+    expect(res.body).toMatchObject({
+      page: 2,
+      pageSize: 20,
+      total: 3,
+      totalPages: 1,
+    });
+  });
+
+  it("applies paginated issue defaults when query parameters are omitted", async () => {
+    const app = createApp({
+      type: "board",
+      source: "local_implicit",
+      userId: "board-user",
+      isInstanceAdmin: true,
+    });
+
+    const res = await request(app)
+      .get(`/api/companies/${COMPANY_ID}/issues/page`);
+
+    expect(res.status).toBe(200);
+    expect(mockIssueService.listPage).toHaveBeenCalledWith(
+      COMPANY_ID,
+      expect.objectContaining({
+        page: 1,
+        pageSize: 50,
+      }),
+    );
+  });
+
+  it("rejects self-scoped paginated issue filters without board authentication", async () => {
+    const app = createApp({
+      type: "agent",
+      source: "agent_key",
+      companyId: COMPANY_ID,
+      agentId: "agent-1",
+      runId: "run-1",
+    });
+
+    const res = await request(app)
+      .get(`/api/companies/${COMPANY_ID}/issues/page`)
+      .query({ assigneeUserId: "me" });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain("assigneeUserId=me requires board authentication");
+    expect(mockIssueService.listPage).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid paginated issue queries before reaching the service", async () => {
+    const app = createApp({
+      type: "board",
+      source: "local_implicit",
+      userId: "board-user",
+      isInstanceAdmin: true,
+    });
+
+    const res = await request(app)
+      .get(`/api/companies/${COMPANY_ID}/issues/page`)
+      .query({ page: "0" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Invalid issues page query");
+    expect(mockIssueService.listPage).not.toHaveBeenCalled();
   });
 });

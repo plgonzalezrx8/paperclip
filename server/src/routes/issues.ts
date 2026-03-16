@@ -8,6 +8,7 @@ import {
   checkoutIssueSchema,
   createIssueSchema,
   linkIssueApprovalSchema,
+  listIssuesPageQuerySchema,
   updateIssueSchema,
 } from "@paperclipai/shared";
 import type { StorageService } from "../storage/types.js";
@@ -25,7 +26,7 @@ import {
   projectService,
 } from "../services/index.js";
 import { logger } from "../middleware/logger.js";
-import { forbidden, HttpError, unauthorized } from "../errors.js";
+import { badRequest, forbidden, HttpError, unauthorized } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { shouldWakeAssigneeOnCheckout } from "./issues-checkout-wakeup.js";
 
@@ -191,6 +192,38 @@ export function issueRoutes(db: Db, storage: StorageService) {
     if (runId) return runId;
     res.status(401).json({ error: "Agent run id required" });
     return null;
+  }
+
+  // Board users can scope issue filters to themselves with `me`; agents must provide explicit user ids.
+  function resolveSelfScopedUserFilter(
+    req: Request,
+    res: Response,
+    rawValue: string | undefined,
+    paramName: string,
+  ): { ok: true; value: string | undefined } | { ok: false } {
+    if (rawValue !== "me") return { ok: true, value: rawValue };
+    if (req.actor.type === "board" && req.actor.userId) {
+      return { ok: true, value: req.actor.userId };
+    }
+    res.status(403).json({ error: `${paramName}=me requires board authentication` });
+    return { ok: false };
+  }
+
+  function resolveIssueUserFilters(req: Request, res: Response) {
+    const assigneeUserFilterRaw = req.query.assigneeUserId as string | undefined;
+    const touchedByUserFilterRaw = req.query.touchedByUserId as string | undefined;
+    const unreadForUserFilterRaw = req.query.unreadForUserId as string | undefined;
+    const assigneeUserId = resolveSelfScopedUserFilter(req, res, assigneeUserFilterRaw, "assigneeUserId");
+    if (!assigneeUserId.ok) return null;
+    const touchedByUserId = resolveSelfScopedUserFilter(req, res, touchedByUserFilterRaw, "touchedByUserId");
+    if (!touchedByUserId.ok) return null;
+    const unreadForUserId = resolveSelfScopedUserFilter(req, res, unreadForUserFilterRaw, "unreadForUserId");
+    if (!unreadForUserId.ok) return null;
+    return {
+      assigneeUserId: assigneeUserId.value,
+      touchedByUserId: touchedByUserId.value,
+      unreadForUserId: unreadForUserId.value,
+    };
   }
 
   async function assertAgentRunCheckoutOwnership(
@@ -495,46 +528,55 @@ export function issueRoutes(db: Db, storage: StorageService) {
   router.get("/companies/:companyId/issues", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const assigneeUserFilterRaw = req.query.assigneeUserId as string | undefined;
-    const touchedByUserFilterRaw = req.query.touchedByUserId as string | undefined;
-    const unreadForUserFilterRaw = req.query.unreadForUserId as string | undefined;
-    const assigneeUserId =
-      assigneeUserFilterRaw === "me" && req.actor.type === "board"
-        ? req.actor.userId
-        : assigneeUserFilterRaw;
-    const touchedByUserId =
-      touchedByUserFilterRaw === "me" && req.actor.type === "board"
-        ? req.actor.userId
-        : touchedByUserFilterRaw;
-    const unreadForUserId =
-      unreadForUserFilterRaw === "me" && req.actor.type === "board"
-        ? req.actor.userId
-        : unreadForUserFilterRaw;
-
-    if (assigneeUserFilterRaw === "me" && (!assigneeUserId || req.actor.type !== "board")) {
-      res.status(403).json({ error: "assigneeUserId=me requires board authentication" });
-      return;
-    }
-    if (touchedByUserFilterRaw === "me" && (!touchedByUserId || req.actor.type !== "board")) {
-      res.status(403).json({ error: "touchedByUserId=me requires board authentication" });
-      return;
-    }
-    if (unreadForUserFilterRaw === "me" && (!unreadForUserId || req.actor.type !== "board")) {
-      res.status(403).json({ error: "unreadForUserId=me requires board authentication" });
+    const userFilters = resolveIssueUserFilters(req, res);
+    if (!userFilters) {
       return;
     }
 
     const result = await svc.list(companyId, {
       status: req.query.status as string | undefined,
       assigneeAgentId: req.query.assigneeAgentId as string | undefined,
-      assigneeUserId,
-      touchedByUserId,
-      unreadForUserId,
+      assigneeUserId: userFilters.assigneeUserId,
+      touchedByUserId: userFilters.touchedByUserId,
+      unreadForUserId: userFilters.unreadForUserId,
       projectId: req.query.projectId as string | undefined,
       parentId: req.query.parentId as string | undefined,
       labelId: req.query.labelId as string | undefined,
       q: req.query.q as string | undefined,
     });
+    res.json(result);
+  });
+
+  // Keep pagination on a separate route so existing issue consumers can stay on the array contract.
+  router.get("/companies/:companyId/issues/page", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const userFilters = resolveIssueUserFilters(req, res);
+    if (!userFilters) {
+      return;
+    }
+
+    const parsed = listIssuesPageQuerySchema.safeParse({
+      status: req.query.status,
+      assigneeAgentId: req.query.assigneeAgentId,
+      assigneeUserId: userFilters.assigneeUserId,
+      touchedByUserId: userFilters.touchedByUserId,
+      unreadForUserId: userFilters.unreadForUserId,
+      projectId: req.query.projectId,
+      parentId: req.query.parentId,
+      labelId: req.query.labelId,
+      q: req.query.q,
+      page: req.query.page,
+      pageSize: req.query.pageSize,
+      sortField: req.query.sortField,
+      sortDir: req.query.sortDir,
+      terminalAgeHours: req.query.terminalAgeHours,
+    });
+    if (!parsed.success) {
+      throw badRequest("Invalid issues page query", parsed.error.issues);
+    }
+
+    const result = await svc.listPage(companyId, parsed.data);
     res.json(result);
   });
 
@@ -801,6 +843,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
     const reviewSubmission = req.body.reviewSubmission;
     const normalizedBody: Record<string, unknown> = { ...req.body };
     let commentBodyForPersistence = commentBody;
+    let checkoutOwnershipVerified = false;
 
     let reviewTarget: ReviewTarget | null = null;
     if (requestedAgentReviewStatus && req.actor.agentId) {
@@ -821,6 +864,10 @@ export function issueRoutes(db: Db, storage: StorageService) {
         return;
       }
       if (reviewSubmission) {
+        // Verify checkout ownership before mutating review metadata so rejected
+        // handoffs cannot partially update the checkout record.
+        if (!(await assertAgentRunCheckoutOwnership(req, res, existing))) return;
+        checkoutOwnershipVerified = true;
         await heartbeat.recordReviewSubmission({
           companyId: existing.companyId,
           issueId: existing.id,
@@ -864,7 +911,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
         await assertCanAssignTasks(req, existing.companyId);
       }
     }
-    if (!(await assertAgentRunCheckoutOwnership(req, res, existing))) return;
+    if (!checkoutOwnershipVerified && !(await assertAgentRunCheckoutOwnership(req, res, existing))) return;
 
     const {
       comment: _commentBody,

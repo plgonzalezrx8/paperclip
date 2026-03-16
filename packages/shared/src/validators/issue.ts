@@ -44,6 +44,53 @@ export const issueReviewSubmissionSchema = z.object({
   pullRequestTitle: z.string().trim().min(1).optional().nullable(),
 });
 
+export const issuePageSortFieldSchema = z.enum(["updated", "created", "priority", "title", "status"]);
+export const issuePageSortDirectionSchema = z.enum(["asc", "desc"]);
+
+function parseOptionalPositiveInteger(value: unknown) {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : value;
+  }
+  return value;
+}
+
+function parseTerminalAgeHours(value: unknown) {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value === "string") {
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed) return undefined;
+    if (trimmed === "all") return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : value;
+  }
+  if (typeof value === "number") return value;
+  return value;
+}
+
+// Keep the paginated issue query contract explicit so the top-level /issues page can evolve
+// without changing the long-lived array response used by other issue consumers.
+export const listIssuesPageQuerySchema = z.object({
+  status: z.string().trim().min(1).optional(),
+  assigneeAgentId: z.string().trim().min(1).optional(),
+  assigneeUserId: z.string().trim().min(1).optional(),
+  touchedByUserId: z.string().trim().min(1).optional(),
+  unreadForUserId: z.string().trim().min(1).optional(),
+  projectId: z.string().trim().min(1).optional(),
+  parentId: z.string().trim().min(1).optional(),
+  labelId: z.string().trim().min(1).optional(),
+  q: z.string().trim().optional(),
+  page: z.preprocess(parseOptionalPositiveInteger, z.number().int().min(1).default(1)),
+  pageSize: z.preprocess(parseOptionalPositiveInteger, z.number().int().min(1).max(100).default(50)),
+  sortField: issuePageSortFieldSchema.optional(),
+  sortDir: issuePageSortDirectionSchema.optional(),
+  terminalAgeHours: z.preprocess(parseTerminalAgeHours, z.number().int().positive().nullable().default(48)),
+});
+
 export const updateIssueSchema = createIssueSchema.partial().extend({
   comment: z.string().min(1).optional(),
   hiddenAt: z.string().datetime().nullable().optional(),
@@ -51,6 +98,7 @@ export const updateIssueSchema = createIssueSchema.partial().extend({
 });
 
 export type UpdateIssue = z.infer<typeof updateIssueSchema>;
+export type ListIssuesPageQuery = z.infer<typeof listIssuesPageQuerySchema>;
 
 export const checkoutIssueSchema = z.object({
   agentId: z.string().uuid(),

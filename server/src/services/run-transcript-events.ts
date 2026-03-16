@@ -20,6 +20,11 @@ type CommandExecutionDetails = {
   outputSnippet: string | null;
 };
 
+export type ChunkedLineParseResult = {
+  lines: string[];
+  remainder: string;
+};
+
 const STDOUT_PARSER_REGISTRY: Record<string, StdoutLineParser> = {
   claude_local: parseClaudeStdoutLine,
   codex_local: parseCodexStdoutLine,
@@ -31,6 +36,24 @@ const STDOUT_PARSER_REGISTRY: Record<string, StdoutLineParser> = {
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
+}
+
+// Stream chunks may split lines arbitrarily; keep the trailing partial line for the next chunk.
+export function consumeChunkLines(chunk: string, remainder = ""): ChunkedLineParseResult {
+  const combined = remainder + chunk;
+  const parts = combined.split(/\r?\n/);
+  const nextRemainder = parts.pop() ?? "";
+  return {
+    lines: parts
+      .map((line) => line.trim())
+      .filter(Boolean),
+    remainder: nextRemainder,
+  };
+}
+
+export function flushChunkRemainder(remainder: string): string[] {
+  const trailing = remainder.trim();
+  return trailing ? [trailing] : [];
 }
 
 function normalizeText(value: string) {
@@ -207,10 +230,8 @@ export function parseStructuredStdoutLine(
   return parser(line, ts).map((entry) => transcriptEntryToRunEvent(entry));
 }
 
-export function stderrChunkToRunEvents(chunk: string): PersistableRunEvent[] {
-  return chunk
-    .split(/\r?\n/)
-    .map((line) => line.trim())
+export function stderrLinesToRunEvents(lines: string[]): PersistableRunEvent[] {
+  return lines
     .filter(Boolean)
     .map((line) => ({
       eventType: "transcript.stderr",
@@ -219,6 +240,10 @@ export function stderrChunkToRunEvents(chunk: string): PersistableRunEvent[] {
       message: line,
       payload: { text: line },
     }));
+}
+
+export function stderrChunkToRunEvents(chunk: string): PersistableRunEvent[] {
+  return stderrLinesToRunEvents(consumeChunkLines(chunk).lines);
 }
 
 export function eventHasStructuredTranscriptContent(eventType: string): boolean {

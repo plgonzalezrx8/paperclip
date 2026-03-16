@@ -386,6 +386,12 @@ function parseFrontmatterMarkdown(raw: string): MarkdownDoc {
   return { frontmatter, body };
 }
 
+// Keep the parser reachable from unit tests so portability validation can stay
+// focused on manifest semantics without driving a full import/export workflow.
+export const companyPortabilityTestHelpers = {
+  parseFrontmatterMarkdown,
+};
+
 async function fetchJson(url: string) {
   const response = await fetch(url);
   if (!response.ok) {

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents,
@@ -17,7 +17,14 @@ import {
   projects,
   workspaceCheckouts,
 } from "@paperclipai/db";
-import { extractProjectMentionIds } from "@paperclipai/shared";
+import {
+  extractProjectMentionIds,
+  type Issue,
+  type IssueActiveRun,
+  type IssuePageResult,
+  type IssuePageSortDirection,
+  type IssuePageSortField,
+} from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 
 const ALL_ISSUE_STATUSES = ["backlog", "todo", "in_progress", "in_review", "blocked", "done", "cancelled"];
@@ -71,18 +78,17 @@ export interface IssueFilters {
   q?: string;
 }
 
+export interface IssuePageFilters extends IssueFilters {
+  page?: number;
+  pageSize?: number;
+  sortField?: IssuePageSortField;
+  sortDir?: IssuePageSortDirection;
+  terminalAgeHours?: number | null;
+}
+
 type IssueRow = typeof issues.$inferSelect;
 type IssueLabelRow = typeof labels.$inferSelect;
-type IssueActiveRunRow = {
-  id: string;
-  status: string;
-  agentId: string;
-  invocationSource: string;
-  triggerDetail: string | null;
-  startedAt: Date | null;
-  finishedAt: Date | null;
-  createdAt: Date;
-};
+type IssueActiveRunRow = IssueActiveRun;
 type IssueWithLabels = IssueRow & { labels: IssueLabelRow[]; labelIds: string[] };
 type IssueWithLabelsAndRun = IssueWithLabels & { activeRun: IssueActiveRunRow | null };
 type IssueUserCommentStats = {
@@ -90,12 +96,27 @@ type IssueUserCommentStats = {
   myLastCommentAt: Date | null;
   lastExternalCommentAt: Date | null;
 };
+type IssueUserReadState = {
+  issueId: string;
+  myLastReadAt: Date | null;
+};
 type IssueUserContextInput = {
   createdByUserId: string | null;
   assigneeUserId: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
 };
+
+type IssueListQueryState = {
+  conditions: SQL<unknown>[];
+  contextUserId: string | undefined;
+  hasSearch: boolean;
+  priorityOrder: SQL<number>;
+  searchOrder: SQL<number>;
+};
+
+const ISSUE_PAGE_DEFAULT_PAGE_SIZE = 50;
+const ISSUE_PAGE_DEFAULT_TERMINAL_AGE_HOURS = 48;
 
 function sameRunLock(checkoutRunId: string | null, actorRunId: string | null) {
   if (actorRunId) return checkoutRunId === actorRunId;
@@ -329,6 +350,287 @@ function withActiveRuns(
   }));
 }
 
+function issueStatusOrderExpr() {
+  return sql<number>`
+    CASE ${issues.status}
+      WHEN 'in_progress' THEN 0
+      WHEN 'todo' THEN 1
+      WHEN 'backlog' THEN 2
+      WHEN 'in_review' THEN 3
+      WHEN 'blocked' THEN 4
+      WHEN 'done' THEN 5
+      WHEN 'cancelled' THEN 6
+      ELSE 7
+    END
+  `;
+}
+
+function terminalAgeCondition(terminalAgeHours: number | null | undefined, now: Date) {
+  if (terminalAgeHours == null) return null;
+  const cutoff = new Date(now.getTime() - terminalAgeHours * 60 * 60 * 1000);
+  // postgres-js expects text-compatible bindings inside this interpolated SQL
+  // fragment, so serialize the timestamp before comparing it to issue columns.
+  const cutoffIso = cutoff.toISOString();
+  return sql<boolean>`
+    CASE
+      WHEN ${issues.status} = 'done'
+        THEN COALESCE(${issues.completedAt}, ${issues.updatedAt}, ${issues.createdAt}) >= ${cutoffIso}
+      WHEN ${issues.status} = 'cancelled'
+        THEN COALESCE(${issues.cancelledAt}, ${issues.updatedAt}, ${issues.createdAt}) >= ${cutoffIso}
+      ELSE TRUE
+    END
+  `;
+}
+
+// Normalize direct service callers and route-validated callers onto the same pagination defaults.
+export function normalizeIssuePageFilters(filters?: IssuePageFilters) {
+  const page =
+    typeof filters?.page === "number" && Number.isFinite(filters.page)
+      ? Math.max(1, Math.trunc(filters.page))
+      : 1;
+  const pageSize =
+    typeof filters?.pageSize === "number" && Number.isFinite(filters.pageSize)
+      ? Math.min(100, Math.max(1, Math.trunc(filters.pageSize)))
+      : ISSUE_PAGE_DEFAULT_PAGE_SIZE;
+  const terminalAgeHours =
+    filters?.terminalAgeHours === null
+      ? null
+      : typeof filters?.terminalAgeHours === "number" && Number.isFinite(filters.terminalAgeHours) && filters.terminalAgeHours > 0
+        ? Math.trunc(filters.terminalAgeHours)
+        : ISSUE_PAGE_DEFAULT_TERMINAL_AGE_HOURS;
+  return {
+    page,
+    pageSize,
+    sortField: filters?.sortField,
+    sortDir: filters?.sortDir,
+    terminalAgeHours,
+  };
+}
+
+function issueSortExpressions(input: {
+  hasSearch: boolean;
+  priorityOrder: SQL<number>;
+  searchOrder: SQL<number>;
+  sortField?: IssuePageSortField;
+  sortDir?: IssuePageSortDirection;
+}) {
+  if (!input.sortField && input.hasSearch) {
+    return [asc(input.searchOrder), asc(input.priorityOrder), desc(issues.updatedAt), asc(issues.id)] as const;
+  }
+
+  const sortField = input.sortField ?? "updated";
+  const defaultSortDir = sortField === "created" || sortField === "updated" ? "desc" : "asc";
+  const sortDir = input.sortDir ?? defaultSortDir;
+  const statusOrder = issueStatusOrderExpr();
+  const titleOrder = sql<string>`LOWER(${issues.title})`;
+
+  switch (sortField) {
+    case "created":
+      return [sortDir === "asc" ? asc(issues.createdAt) : desc(issues.createdAt), asc(issues.id)] as const;
+    case "priority":
+      return [
+        sortDir === "asc" ? asc(input.priorityOrder) : desc(input.priorityOrder),
+        input.hasSearch ? asc(input.searchOrder) : desc(issues.updatedAt),
+        asc(issues.id),
+      ] as const;
+    case "title":
+      return [
+        sortDir === "asc" ? asc(titleOrder) : desc(titleOrder),
+        input.hasSearch ? asc(input.searchOrder) : desc(issues.updatedAt),
+        asc(issues.id),
+      ] as const;
+    case "status":
+      return [
+        sortDir === "asc" ? asc(statusOrder) : desc(statusOrder),
+        input.hasSearch ? asc(input.searchOrder) : desc(issues.updatedAt),
+        asc(issues.id),
+      ] as const;
+    case "updated":
+    default:
+      return [
+        sortDir === "asc" ? asc(issues.updatedAt) : desc(issues.updatedAt),
+        input.hasSearch ? asc(input.searchOrder) : asc(input.priorityOrder),
+        asc(issues.id),
+      ] as const;
+  }
+}
+
+async function enrichIssueRows(
+  dbOrTx: any,
+  companyId: string,
+  rows: IssueRow[],
+  contextUserId?: string,
+): Promise<Issue[]> {
+  const withLabels = await withIssueLabels(dbOrTx, rows);
+  const runMap = await activeRunMapForIssues(dbOrTx, withLabels);
+  // Drizzle widens enum-backed columns to `string` on select, but these rows still originate from
+  // the validated issue schema and are serialized on the same API contract as the legacy list route.
+  const withRuns = withActiveRuns(withLabels, runMap);
+  if (!contextUserId || withRuns.length === 0) {
+    return withRuns as unknown as Issue[];
+  }
+
+  const issueIds = withRuns.map((row) => row.id);
+  const statsRows: IssueUserCommentStats[] = await dbOrTx
+    .select({
+      issueId: issueComments.issueId,
+      myLastCommentAt: sql<Date | null>`
+        MAX(CASE WHEN ${issueComments.authorUserId} = ${contextUserId} THEN ${issueComments.createdAt} END)
+      `,
+      lastExternalCommentAt: sql<Date | null>`
+        MAX(
+          CASE
+            WHEN ${issueComments.authorUserId} IS NULL OR ${issueComments.authorUserId} <> ${contextUserId}
+            THEN ${issueComments.createdAt}
+          END
+        )
+      `,
+    })
+    .from(issueComments)
+    .where(
+      and(
+        eq(issueComments.companyId, companyId),
+        inArray(issueComments.issueId, issueIds),
+      ),
+    )
+    .groupBy(issueComments.issueId);
+  const readRows: IssueUserReadState[] = await dbOrTx
+    .select({
+      issueId: issueReadStates.issueId,
+      myLastReadAt: issueReadStates.lastReadAt,
+    })
+    .from(issueReadStates)
+    .where(
+      and(
+        eq(issueReadStates.companyId, companyId),
+        eq(issueReadStates.userId, contextUserId),
+        inArray(issueReadStates.issueId, issueIds),
+      ),
+    );
+  const statsByIssueId = new Map<string, IssueUserCommentStats>(statsRows.map((row) => [row.issueId, row]));
+  const readByIssueId = new Map<string, Date | null>(readRows.map((row) => [row.issueId, row.myLastReadAt]));
+
+  return withRuns.map((row) => ({
+    ...row,
+    ...deriveIssueUserContext(row, contextUserId, {
+      myLastCommentAt: statsByIssueId.get(row.id)?.myLastCommentAt ?? null,
+      myLastReadAt: readByIssueId.get(row.id) ?? null,
+      lastExternalCommentAt: statsByIssueId.get(row.id)?.lastExternalCommentAt ?? null,
+    }),
+  })) as unknown as Issue[];
+}
+
+// Keep the legacy array query and the new paginated query on the same filter foundation so
+// adjacent issue surfaces interpret assignees, labels, search, and visibility consistently.
+async function buildIssueListQueryState(
+  dbOrTx: any,
+  companyId: string,
+  filters?: IssueFilters,
+): Promise<IssueListQueryState> {
+  const conditions: SQL<unknown>[] = [eq(issues.companyId, companyId)];
+  const touchedByUserId = filters?.touchedByUserId?.trim() || undefined;
+  const unreadForUserId = filters?.unreadForUserId?.trim() || undefined;
+  const contextUserId = unreadForUserId ?? touchedByUserId;
+  const rawSearch = filters?.q?.trim() ?? "";
+  const hasSearch = rawSearch.length > 0;
+  const escapedSearch = hasSearch ? escapeLikePattern(rawSearch) : "";
+  const startsWithPattern = `${escapedSearch}%`;
+  const containsPattern = `%${escapedSearch}%`;
+  const titleStartsWithMatch = sql<boolean>`${issues.title} ILIKE ${startsWithPattern} ESCAPE '\\'`;
+  const titleContainsMatch = sql<boolean>`${issues.title} ILIKE ${containsPattern} ESCAPE '\\'`;
+  const identifierStartsWithMatch = sql<boolean>`${issues.identifier} ILIKE ${startsWithPattern} ESCAPE '\\'`;
+  const identifierContainsMatch = sql<boolean>`${issues.identifier} ILIKE ${containsPattern} ESCAPE '\\'`;
+  const descriptionContainsMatch = sql<boolean>`${issues.description} ILIKE ${containsPattern} ESCAPE '\\'`;
+  const commentContainsMatch = sql<boolean>`
+    EXISTS (
+      SELECT 1
+      FROM ${issueComments}
+      WHERE ${issueComments.issueId} = ${issues.id}
+        AND ${issueComments.companyId} = ${companyId}
+        AND ${issueComments.body} ILIKE ${containsPattern} ESCAPE '\\'
+    )
+  `;
+
+  if (filters?.status) {
+    const statuses = filters.status.split(",").map((status) => status.trim()).filter(Boolean);
+    if (statuses.length === 1) {
+      conditions.push(eq(issues.status, statuses[0]));
+    } else if (statuses.length > 1) {
+      conditions.push(inArray(issues.status, statuses));
+    }
+  }
+  if (filters?.assigneeAgentId) {
+    conditions.push(eq(issues.assigneeAgentId, filters.assigneeAgentId));
+  }
+  if (filters?.assigneeUserId) {
+    conditions.push(eq(issues.assigneeUserId, filters.assigneeUserId));
+  }
+  if (touchedByUserId) {
+    conditions.push(touchedByUserCondition(companyId, touchedByUserId));
+  }
+  if (unreadForUserId) {
+    conditions.push(unreadForUserCondition(companyId, unreadForUserId));
+  }
+  if (filters?.projectId) {
+    conditions.push(eq(issues.projectId, filters.projectId));
+  }
+  if (filters?.parentId !== undefined) {
+    conditions.push(
+      filters.parentId === "null"
+        ? isNull(issues.parentId)
+        : eq(issues.parentId, filters.parentId),
+    );
+  }
+  if (filters?.labelId) {
+    const labeledIssueIds: Array<{ issueId: string }> = await dbOrTx
+      .select({ issueId: issueLabels.issueId })
+      .from(issueLabels)
+      .where(and(eq(issueLabels.companyId, companyId), eq(issueLabels.labelId, filters.labelId)));
+    if (labeledIssueIds.length === 0) {
+      conditions.push(sql`FALSE`);
+    } else {
+      conditions.push(inArray(issues.id, labeledIssueIds.map((row) => row.issueId)));
+    }
+  }
+  if (hasSearch) {
+    conditions.push(
+      or(
+        titleContainsMatch,
+        identifierContainsMatch,
+        descriptionContainsMatch,
+        commentContainsMatch,
+      )!,
+    );
+  }
+  conditions.push(isNull(issues.hiddenAt));
+
+  return {
+    conditions,
+    contextUserId,
+    hasSearch,
+    priorityOrder: sql<number>`
+      CASE ${issues.priority}
+        WHEN 'critical' THEN 0
+        WHEN 'high' THEN 1
+        WHEN 'medium' THEN 2
+        WHEN 'low' THEN 3
+        ELSE 4
+      END
+    `,
+    searchOrder: sql<number>`
+      CASE
+        WHEN ${titleStartsWithMatch} THEN 0
+        WHEN ${titleContainsMatch} THEN 1
+        WHEN ${identifierStartsWithMatch} THEN 2
+        WHEN ${identifierContainsMatch} THEN 3
+        WHEN ${descriptionContainsMatch} THEN 4
+        WHEN ${commentContainsMatch} THEN 5
+        ELSE 6
+      END
+    `,
+  };
+}
+
 export function issueService(db: Db) {
   async function assertAssignableAgent(companyId: string, agentId: string) {
     const assignee = await db
@@ -451,145 +753,72 @@ export function issueService(db: Db) {
 
   return {
     list: async (companyId: string, filters?: IssueFilters) => {
-      const conditions = [eq(issues.companyId, companyId)];
-      const touchedByUserId = filters?.touchedByUserId?.trim() || undefined;
-      const unreadForUserId = filters?.unreadForUserId?.trim() || undefined;
-      const contextUserId = unreadForUserId ?? touchedByUserId;
-      const rawSearch = filters?.q?.trim() ?? "";
-      const hasSearch = rawSearch.length > 0;
-      const escapedSearch = hasSearch ? escapeLikePattern(rawSearch) : "";
-      const startsWithPattern = `${escapedSearch}%`;
-      const containsPattern = `%${escapedSearch}%`;
-      const titleStartsWithMatch = sql<boolean>`${issues.title} ILIKE ${startsWithPattern} ESCAPE '\\'`;
-      const titleContainsMatch = sql<boolean>`${issues.title} ILIKE ${containsPattern} ESCAPE '\\'`;
-      const identifierStartsWithMatch = sql<boolean>`${issues.identifier} ILIKE ${startsWithPattern} ESCAPE '\\'`;
-      const identifierContainsMatch = sql<boolean>`${issues.identifier} ILIKE ${containsPattern} ESCAPE '\\'`;
-      const descriptionContainsMatch = sql<boolean>`${issues.description} ILIKE ${containsPattern} ESCAPE '\\'`;
-      const commentContainsMatch = sql<boolean>`
-        EXISTS (
-          SELECT 1
-          FROM ${issueComments}
-          WHERE ${issueComments.issueId} = ${issues.id}
-            AND ${issueComments.companyId} = ${companyId}
-            AND ${issueComments.body} ILIKE ${containsPattern} ESCAPE '\\'
-        )
-      `;
-      if (filters?.status) {
-        const statuses = filters.status.split(",").map((s) => s.trim());
-        conditions.push(statuses.length === 1 ? eq(issues.status, statuses[0]) : inArray(issues.status, statuses));
-      }
-      if (filters?.assigneeAgentId) {
-        conditions.push(eq(issues.assigneeAgentId, filters.assigneeAgentId));
-      }
-      if (filters?.assigneeUserId) {
-        conditions.push(eq(issues.assigneeUserId, filters.assigneeUserId));
-      }
-      if (touchedByUserId) {
-        conditions.push(touchedByUserCondition(companyId, touchedByUserId));
-      }
-      if (unreadForUserId) {
-        conditions.push(unreadForUserCondition(companyId, unreadForUserId));
-      }
-      if (filters?.projectId) conditions.push(eq(issues.projectId, filters.projectId));
-      if (filters?.parentId !== undefined) {
-        conditions.push(
-          filters.parentId === "null"
-            ? isNull(issues.parentId)
-            : eq(issues.parentId, filters.parentId),
+      const query = await buildIssueListQueryState(db, companyId, filters);
+      const rows = await db
+        .select()
+        .from(issues)
+        .where(and(...query.conditions))
+        .orderBy(
+          query.hasSearch ? asc(query.searchOrder) : asc(query.priorityOrder),
+          asc(query.priorityOrder),
+          desc(issues.updatedAt),
         );
-      }
-      if (filters?.labelId) {
-        const labeledIssueIds = await db
-          .select({ issueId: issueLabels.issueId })
-          .from(issueLabels)
-          .where(and(eq(issueLabels.companyId, companyId), eq(issueLabels.labelId, filters.labelId)));
-        if (labeledIssueIds.length === 0) return [];
-        conditions.push(inArray(issues.id, labeledIssueIds.map((row) => row.issueId)));
-      }
-      if (hasSearch) {
-        conditions.push(
-          or(
-            titleContainsMatch,
-            identifierContainsMatch,
-            descriptionContainsMatch,
-            commentContainsMatch,
-          )!,
-        );
-      }
-      conditions.push(isNull(issues.hiddenAt));
+      return enrichIssueRows(db, companyId, rows, query.contextUserId);
+    },
 
-      const priorityOrder = sql`CASE ${issues.priority} WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`;
-      const searchOrder = sql<number>`
-        CASE
-          WHEN ${titleStartsWithMatch} THEN 0
-          WHEN ${titleContainsMatch} THEN 1
-          WHEN ${identifierStartsWithMatch} THEN 2
-          WHEN ${identifierContainsMatch} THEN 3
-          WHEN ${descriptionContainsMatch} THEN 4
-          WHEN ${commentContainsMatch} THEN 5
-          ELSE 6
-        END
-      `;
+    listPage: async (companyId: string, filters?: IssuePageFilters): Promise<IssuePageResult> => {
+      const normalized = normalizeIssuePageFilters(filters);
+      const query = await buildIssueListQueryState(db, companyId, filters);
+      const conditions = [...query.conditions];
+      const ageCondition = terminalAgeCondition(normalized.terminalAgeHours, new Date());
+      if (ageCondition) {
+        conditions.push(ageCondition);
+      }
+
+      const [countRow] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(issues)
+        .where(and(...conditions));
+      const total = Number(countRow?.count ?? 0);
+      const totalPages = total === 0 ? 1 : Math.ceil(total / normalized.pageSize);
+      const page = normalized.page;
+      const isOutOfRangePage = total > 0 && page > totalPages;
+      if (total === 0 || isOutOfRangePage) {
+        // Echo the requested page number so machine consumers can stop paging on
+        // `items.length === 0`, while the UI remains free to recover to the
+        // last valid page client-side for human operators.
+        return {
+          items: [],
+          page,
+          pageSize: normalized.pageSize,
+          total,
+          totalPages,
+        };
+      }
+
       const rows = await db
         .select()
         .from(issues)
         .where(and(...conditions))
-        .orderBy(hasSearch ? asc(searchOrder) : asc(priorityOrder), asc(priorityOrder), desc(issues.updatedAt));
-      const withLabels = await withIssueLabels(db, rows);
-      const runMap = await activeRunMapForIssues(db, withLabels);
-      const withRuns = withActiveRuns(withLabels, runMap);
-      if (!contextUserId || withRuns.length === 0) {
-        return withRuns;
-      }
-
-      const issueIds = withRuns.map((row) => row.id);
-      const statsRows = await db
-        .select({
-          issueId: issueComments.issueId,
-          myLastCommentAt: sql<Date | null>`
-            MAX(CASE WHEN ${issueComments.authorUserId} = ${contextUserId} THEN ${issueComments.createdAt} END)
-          `,
-          lastExternalCommentAt: sql<Date | null>`
-            MAX(
-              CASE
-                WHEN ${issueComments.authorUserId} IS NULL OR ${issueComments.authorUserId} <> ${contextUserId}
-                THEN ${issueComments.createdAt}
-              END
-            )
-          `,
-        })
-        .from(issueComments)
-        .where(
-          and(
-            eq(issueComments.companyId, companyId),
-            inArray(issueComments.issueId, issueIds),
-          ),
+        .orderBy(
+          ...issueSortExpressions({
+            hasSearch: query.hasSearch,
+            priorityOrder: query.priorityOrder,
+            searchOrder: query.searchOrder,
+            sortField: normalized.sortField,
+            sortDir: normalized.sortDir,
+          }),
         )
-        .groupBy(issueComments.issueId);
-      const readRows = await db
-        .select({
-          issueId: issueReadStates.issueId,
-          myLastReadAt: issueReadStates.lastReadAt,
-        })
-        .from(issueReadStates)
-        .where(
-          and(
-            eq(issueReadStates.companyId, companyId),
-            eq(issueReadStates.userId, contextUserId),
-            inArray(issueReadStates.issueId, issueIds),
-          ),
-        );
-      const statsByIssueId = new Map(statsRows.map((row) => [row.issueId, row]));
-      const readByIssueId = new Map(readRows.map((row) => [row.issueId, row.myLastReadAt]));
-
-      return withRuns.map((row) => ({
-        ...row,
-        ...deriveIssueUserContext(row, contextUserId, {
-          myLastCommentAt: statsByIssueId.get(row.id)?.myLastCommentAt ?? null,
-          myLastReadAt: readByIssueId.get(row.id) ?? null,
-          lastExternalCommentAt: statsByIssueId.get(row.id)?.lastExternalCommentAt ?? null,
-        }),
-      }));
+        .limit(normalized.pageSize)
+        .offset((page - 1) * normalized.pageSize);
+      const items = await enrichIssueRows(db, companyId, rows, query.contextUserId);
+      return {
+        items,
+        page,
+        pageSize: normalized.pageSize,
+        total,
+        totalPages,
+      };
     },
 
     countUnreadTouchedByUser: async (companyId: string, userId: string, status?: string) => {

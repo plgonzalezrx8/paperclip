@@ -1,4 +1,13 @@
-import type { Approval, Issue, IssueAttachment, IssueComment, IssueLabel } from "@paperclipai/shared";
+import type {
+  Approval,
+  Issue,
+  IssueAttachment,
+  IssueComment,
+  IssueLabel,
+  IssuePageResult,
+  IssuePageSortDirection,
+  IssuePageSortField,
+} from "@paperclipai/shared";
 import { api } from "./client";
 
 export const issuesApi = {
@@ -28,6 +37,43 @@ export const issuesApi = {
     if (filters?.q) params.set("q", filters.q);
     const qs = params.toString();
     return api.get<Issue[]>(`/companies/${companyId}/issues${qs ? `?${qs}` : ""}`);
+  },
+  listPage: (
+    companyId: string,
+    filters?: {
+      status?: string;
+      projectId?: string;
+      assigneeAgentId?: string;
+      assigneeUserId?: string;
+      touchedByUserId?: string;
+      unreadForUserId?: string;
+      labelId?: string;
+      parentId?: string;
+      q?: string;
+      page?: number;
+      pageSize?: number;
+      sortField?: IssuePageSortField;
+      sortDir?: IssuePageSortDirection;
+      terminalAgeHours?: number | "all";
+    },
+  ) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.set("status", filters.status);
+    if (filters?.projectId) params.set("projectId", filters.projectId);
+    if (filters?.assigneeAgentId) params.set("assigneeAgentId", filters.assigneeAgentId);
+    if (filters?.assigneeUserId) params.set("assigneeUserId", filters.assigneeUserId);
+    if (filters?.touchedByUserId) params.set("touchedByUserId", filters.touchedByUserId);
+    if (filters?.unreadForUserId) params.set("unreadForUserId", filters.unreadForUserId);
+    if (filters?.labelId) params.set("labelId", filters.labelId);
+    if (filters?.parentId) params.set("parentId", filters.parentId);
+    if (filters?.q) params.set("q", filters.q);
+    if (typeof filters?.page === "number") params.set("page", String(filters.page));
+    if (typeof filters?.pageSize === "number") params.set("pageSize", String(filters.pageSize));
+    if (filters?.sortField) params.set("sortField", filters.sortField);
+    if (filters?.sortDir) params.set("sortDir", filters.sortDir);
+    if (filters?.terminalAgeHours !== undefined) params.set("terminalAgeHours", String(filters.terminalAgeHours));
+    const qs = params.toString();
+    return api.get<IssuePageResult>(`/companies/${companyId}/issues/page${qs ? `?${qs}` : ""}`);
   },
   listLabels: (companyId: string) => api.get<IssueLabel[]>(`/companies/${companyId}/labels`),
   createLabel: (companyId: string, data: { name: string; color: string }) =>

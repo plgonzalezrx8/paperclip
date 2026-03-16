@@ -5,6 +5,8 @@ dist/
 drizzle/meta/
 .vite/
 coverage/
+test-results/
+playwright-report/
 .DS_Store
 data/
 .paperclip/

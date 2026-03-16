@@ -1,8 +1,228 @@
 # Recent Changes Snapshot
 
-Date: 2026-03-10
+Date: 2026-03-16
 
 This file explains the current state of the repo in product and operational terms so a human can look at the running app and understand what is actually new.
+
+## March 15 late-window follow-up
+
+The reviewed window on `origin/development` added roadmap item lifecycle controls, hardened repo-backed transcript and review-handoff behavior, tightened CI verification gates, and moved the top-level issues page to a paginated contract.
+
+Reviewed merged commits:
+
+1. `bd43e51` `Trim OpenClaw gateway create URLs`
+2. `9cba34a` `fix(server): preserve transcript lines across stream chunks`
+3. `17ca926` `Expose roadmap status editing on goal detail`
+4. `6ff2476` `fix: restore roadmap item controls on development`
+5. `f5fabfe` `fix roadmap board lanes and delete modal`
+6. `0cf4cd5` `Harden test coverage and CI gates`
+7. `97b9d26` `Add paginated company issues query`
+8. `9636895` `feat: paginate the top-level issues page`
+9. `9845d17` `Fix repo review handoff without checkout metadata`
+10. `24626f8` `Fix paginated issues page regression`
+
+Excluded from this snapshot:
+
+- `4d8bccc` `docs(plan): hand off BLU-28 roadmap item controls`
+  - planning handoff doc only
+- `1fa7ba7` `docs: add paperclip README screenshots`
+  - README presentation only
+- `f41b903` `address master promotion blockers`
+  - covered indirectly by the broader CI and regression notes below
+- `41fea62` `Push development changes to master`
+  - promotion merge, not a distinct feature change on `development`
+
+## Roadmap item lifecycle controls
+
+Actual code touchpoints:
+
+- `server/src/services/goals.ts`
+- `server/src/__tests__/roadmap-routes.test.ts`
+- `ui/src/pages/GoalDetail.tsx`
+- `ui/src/pages/GoalDetail.test.tsx`
+- `ui/src/components/RoadmapLaneMenu.tsx`
+- `ui/src/components/GoalTree.tsx`
+- `ui/src/pages/Goals.tsx`
+- `ui/src/lib/roadmap.ts`
+- `ui/src/lib/roadmap.test.ts`
+
+What changed in practice:
+
+- roadmap detail now exposes an inline status picker in the hero row instead of requiring the side panel for a core lifecycle action
+- roadmap detail restores direct add-child and delete actions on `development`
+- deleting a roadmap item now checks child roadmap items, linked projects, linked issues, and historical cost records first so operators get a deterministic conflict message instead of a raw foreign-key failure
+- roadmap board lane menus and delete-modal behavior are back on the board surface after the integration-branch regression
+
+What did not change:
+
+- roadmap items still persist in the existing `goals` model
+- no separate roadmap-only storage table was introduced
+
+## Structured transcript and review-handoff hardening
+
+Actual code touchpoints:
+
+- `server/src/services/heartbeat.ts`
+- `server/src/services/run-transcript-events.ts`
+- `packages/adapter-utils/src/server-utils.ts`
+- `server/src/__tests__/run-transcript-events.test.ts`
+- `server/src/__tests__/issues-routes.test.ts`
+
+What changed in practice:
+
+- structured transcript ingestion now buffers partial stdout/stderr lines across stream chunks before parsing them into `heartbeat_run_events`
+- supported local adapters no longer lose or merge transcript lines incorrectly when a provider splits one logical line across multiple chunks
+- repo-backed review handoff instructions now describe the required `reviewSubmission` fields differently depending on whether a checkout id already exists
+- when repo-backed work needs review metadata persisted but no active checkout row exists yet, the server can materialize a fallback `workspace_checkouts` row from the project workspace and then attach the branch/commit/PR metadata there
+
+What did not change:
+
+- the handoff still goes through the existing issue update route
+- the persisted review payload is still `reviewSubmission`
+
+## Verification and CI gates
+
+Actual code touchpoints:
+
+- `.github/workflows/pr-verify.yml`
+- `doc/DEVELOPING.md`
+- `playwright.config.ts`
+- `vitest.coverage.ts`
+- `tests/e2e/board-flows.spec.ts`
+- `tests/e2e/helpers.ts`
+- `ui/src/test/render.tsx`
+- `ui/src/test/setup.ts`
+
+What changed in practice:
+
+- PR verification now runs `pnpm test:coverage` instead of the looser `pnpm test:run`
+- CI now installs Playwright Chromium and runs `pnpm test:e2e` before build
+- the repo now has explicit command/documentation separation between `pnpm test:unit`, `pnpm test:coverage`, and `pnpm test:e2e`
+- Playwright browser flows now run against a temporary local Paperclip instance spun up by `playwright.config.ts`
+
+What did not change:
+
+- `pnpm -r typecheck` and `pnpm build` remain part of the required hand-off gate
+- CI still targets the integration branch model documented in `doc/DEVELOPING.md`
+
+## Paginated top-level issues page
+
+Actual code touchpoints:
+
+- `server/src/routes/issues.ts`
+- `server/src/services/issues.ts`
+- `packages/shared/src/types/issue.ts`
+- `packages/shared/src/validators/issue.ts`
+- `ui/src/api/issues.ts`
+- `ui/src/pages/Issues.tsx`
+- `ui/src/pages/Issues.test.tsx`
+- `ui/src/components/NewIssueDialog.tsx`
+- `server/src/__tests__/issues-routes.test.ts`
+- `server/src/__tests__/issues-integration.test.ts`
+- `tests/e2e/board-flows.spec.ts`
+
+What changed in practice:
+
+- top-level `/issues` no longer relies on the long-lived array response used by other issue consumers; it now reads from `/api/companies/:companyId/issues/page`
+- the paginated route validates page, page size, sort field, sort direction, and terminal-age trimming explicitly
+- the UI keeps search, filters, sorting, and page number in the URL so issue-list state is shareable and browser-navigation-safe
+- the issues page defaults to 25 rows per page
+- terminal `done` and `cancelled` issues older than 48 hours are trimmed by default, with explicit options to show 24h, 7d, or all terminal history
+- search can sort by updated time, created time, priority, title, or status
+- issue rows now receive `activeRun` context from the paginated service so the page can still show live-run state without reverting to the old list contract
+- when filters shrink the result set and the chosen page is out of range, the UI snaps back to the last valid page instead of leaving the operator on an empty invalid page
+- the new-issue dialog regression introduced by pagination work was fixed in `24626f8`, so creating a new issue from `/issues` preserves the intended prefilled project behavior
+
+What did not change:
+
+- existing consumers of `/api/companies/:companyId/issues` still receive the older array response
+- board-only `assigneeUserId=me`, `touchedByUserId=me`, and `unreadForUserId=me` semantics are preserved across both routes
+
+## March 14 development-window follow-up
+
+The reviewed window on `origin/development` changed repo-backed execution behavior, review handoff metadata, and one agent-setup flow. It did not add a new top-level board destination or API family.
+
+Reviewed merged commits:
+
+1. `1abd1e0` `Implement repo review handoff and run observability`
+2. `04e3a55` `Fix OpenClaw gateway agent creation config`
+3. `494b867` `fix redaction home-path prefix collision`
+4. `2f6bec2` `fix(redaction): redact delimited home-dir roots`
+5. `7e08582` `Add issues list assignee filter tests`
+
+Excluded from this snapshot:
+
+- `1b425441` `feat(ui): ship cyberpunk operator console overhaul`
+  - present only on `origin/blu-26-cyberpunk-ui-overhaul`
+  - not merged into `origin/development` as of this review
+
+## Repo-backed execution and review handoff
+
+Actual code touchpoints:
+
+- `server/src/services/heartbeat.ts`
+- `server/src/routes/issues.ts`
+- `server/src/services/run-transcript-events.ts`
+- `packages/adapter-utils/src/server-utils.ts`
+- `packages/shared/src/types/issue.ts`
+- `packages/shared/src/validators/issue.ts`
+- `packages/db/src/schema/workspace_checkouts.ts`
+- `ui/src/lib/run-events.ts`
+- `ui/src/pages/AgentDetail.tsx`
+
+What changed in practice:
+
+- repo-backed issue checkouts now bootstrap Node dependencies before local adapter execution instead of immediately failing later with missing-module noise
+- bootstrap is lockfile-aware and records its result under `workspace_checkouts.metadata.workspaceBootstrap`
+- local adapters now receive checkout-scoped env with the resolved checkout id, branch, repo URL, and repo ref
+- when an assignee agent hands repo-backed work back as `in_review` or `done`, the issue update must include `reviewSubmission` metadata with the branch, head commit SHA, and PR URL
+- Paperclip persists that PR metadata onto the active checkout row and appends it to the handoff comment so the next reviewer has the branch and PR context inline
+- supported local adapters now emit structured `heartbeat_run_events`, and the operator transcript/events UI prefers those structured events over raw-log heuristics when available
+
+What did not change:
+
+- no new company-scoped top-level route was introduced
+- the review handoff rides the existing issue update flow rather than a separate review API
+
+## OpenClaw gateway create flow
+
+Actual code touchpoints:
+
+- `ui/src/adapters/openclaw-gateway/config-fields.tsx`
+- `packages/adapters/openclaw-gateway/src/ui/build-config.ts`
+- `ui/src/components/agent-config-defaults.ts`
+- `packages/adapter-utils/src/types.ts`
+
+What changed in practice:
+
+- the `openclaw_gateway` create flow no longer hides required gateway fields behind edit-only behavior
+- operators can now set the gateway token, Paperclip API URL override, role, scopes, wait timeout, and session strategy/session key when creating a new agent
+- the create-form serializer now turns the token into the header shape the server expects: `headers.x-openclaw-token`
+
+What did not change:
+
+- no new adapter type landed
+- the server-side runtime contract for `openclaw_gateway` is unchanged; this was a create-form correctness fix
+
+## March 14 correctness hardening
+
+- `server/src/redaction.ts`
+- `server/src/__tests__/redaction.test.ts`
+- `ui/src/lib/issues-list.ts`
+- `ui/src/lib/issues-list.test.ts`
+- `ui/src/components/IssuesList.tsx`
+
+What changed in practice:
+
+- operator-facing log redaction no longer rewrites sibling paths that merely share the local home-directory prefix
+- exact home-directory roots still collapse to `~` when they appear inside quotes or other punctuation-delimited text
+- issues-list assignee filtering, assignee grouping labels, and group-derived new-issue defaults now share one helper module with focused regression tests for agent, explicit-user, `Me`, and unassigned cases
+
+What did not change:
+
+- no new API surface
+- no new route
+- no new product destination in the board UI from these hardening commits alone
 
 ## Post-merge CI update
 

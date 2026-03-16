@@ -134,7 +134,8 @@ Run this full check before claiming done:
 
 ```sh
 pnpm -r typecheck
-pnpm test:run
+pnpm test:coverage
+pnpm test:e2e
 pnpm build
 ```
 

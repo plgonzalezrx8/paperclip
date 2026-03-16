@@ -1,5 +1,28 @@
 # Work Log
 
+## 2026-03-16
+
+### Session: late March 15 docs sync
+
+- Reviewed the post-`2026-03-15T13:00:15Z` `origin/development` window before updating DEV-DOCS.
+- Grounded the update in these behavior-changing commits:
+  - `bd43e51` `Trim OpenClaw gateway create URLs`
+  - `9cba34a` `fix(server): preserve transcript lines across stream chunks`
+  - `17ca926` `Expose roadmap status editing on goal detail`
+  - `6ff2476` `fix: restore roadmap item controls on development`
+  - `f5fabfe` `fix roadmap board lanes and delete modal`
+  - `0cf4cd5` `Harden test coverage and CI gates`
+  - `97b9d26` `Add paginated company issues query`
+  - `9636895` `feat: paginate the top-level issues page`
+  - `9845d17` `Fix repo review handoff without checkout metadata`
+  - `24626f8` `Fix paginated issues page regression`
+- Refreshed the DEV-DOCS operational spine so it now reflects:
+  - roadmap item lifecycle controls and dependency-aware delete guardrails
+  - transcript chunk preservation and fallback checkout persistence for repo-backed review handoff
+  - the expanded verification contract (`typecheck`, `test:coverage`, `test:e2e`, `build`)
+  - the new paginated `/issues` route and UI behavior
+- No speculative entries were added for docs-only commits or merge-only commits.
+
 ## 2026-03-14
 
 ### Session: OpenClaw agent creation form fix
@@ -14,6 +37,54 @@
   - `pnpm -r typecheck`
   - `pnpm test:run`
   - `pnpm build`
+
+### Session: repo review handoff and structured run observability
+
+- Added lockfile-aware workspace bootstrap in `server/src/services/heartbeat.ts` for repo-backed issue checkouts:
+  - detects `pnpm`, `npm`, `yarn`, and `bun` lockfiles
+  - skips reinstall when the saved bootstrap metadata still matches the checkout
+  - fails early with a bootstrap error when the required package manager is missing or install fails
+- Extended the repo-backed local-adapter runtime contract so execution now receives checkout-specific env such as:
+  - `PAPERCLIP_WORKSPACE_CWD`
+  - `PAPERCLIP_WORKSPACE_CHECKOUT_ID`
+  - `PAPERCLIP_WORKSPACE_BRANCH`
+  - `PAPERCLIP_WORKSPACE_REPO_URL`
+  - `PAPERCLIP_WORKSPACE_REPO_REF`
+- Added `reviewSubmission` to issue update contracts for repo-backed handoffs to `in_review` / `done`:
+  - active checkouts now require branch name, head commit SHA, and PR URL when the assignee agent hands work back
+  - `workspace_checkouts` now persist branch/remote/PR metadata plus `submittedForReviewAt`
+  - handoff comments append the review-submission details for the human creator, project lead, or manager reviewer
+- Structured run observability is now first-class for supported local adapters:
+  - machine-readable stdout now persists as `heartbeat_run_events`
+  - agent detail prefers those structured events for transcripts and the Events panel while older runs still fall back to raw log parsing
+- Added focused coverage in:
+  - `server/src/__tests__/heartbeat-bootstrap.test.ts`
+  - `server/src/__tests__/issues-routes.test.ts`
+  - `server/src/__tests__/run-transcript-events.test.ts`
+  - `ui/src/lib/run-events.test.ts`
+  - `ui/src/components/planning-mode-ui.test.tsx`
+
+### Session: follow-up hardening for redaction boundaries and issues-list assignee helpers
+
+- Reviewed the 2026-03-14 `origin/development` commits that changed shipped behavior or regression coverage:
+  - `494b867` `fix redaction home-path prefix collision`
+  - `2f6bec2` `fix(redaction): redact delimited home-dir roots`
+  - `7e08582` `Add issues list assignee filter tests`
+- Tightened operator-facing redaction in `server/src/redaction.ts` so:
+  - sibling paths that only share a home-directory prefix are left untouched
+  - exact home-directory roots still redact to `~` when delimited by punctuation or quotes
+- Added regression coverage in `server/src/__tests__/redaction.test.ts` for both home-path edge cases.
+- Extracted shared issues-list assignee behavior into `ui/src/lib/issues-list.ts`:
+  - assignee filtering
+  - assignee grouping keys and labels
+  - group-derived defaults for new issue creation
+- Added focused coverage in `ui/src/lib/issues-list.test.ts` for:
+  - agent assignee filters
+  - explicit user filters
+  - `Me` and unassigned filters
+  - assignee-group labels and new-issue defaults
+- Kept the change scoped to correctness and coverage:
+  - no new route, API, or product surface was introduced by these commits
 ## 2026-03-13
 
 ### Session: QoL upstream adoption for assignee UX, dialog flow, and privacy hardening

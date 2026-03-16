@@ -267,6 +267,38 @@ Expected:
 - `/api/health` returns `{"status":"ok"}`
 - `/api/companies` returns a JSON array
 
+## Test Commands
+
+Paperclip now splits fast unit verification, coverage gating, and browser coverage into explicit commands:
+
+```sh
+pnpm test:unit
+pnpm test:coverage
+pnpm test:e2e
+```
+
+What each command covers:
+
+- `pnpm test:unit`
+  - runs the full Vitest matrix, including `server`, `ui`, `cli`, `packages/shared`, `packages/adapter-utils`, adapter packages, and the root `scripts/startup-context.test.js` suite
+- `pnpm test:coverage`
+  - runs the same Vitest matrix with per-project V8 coverage reports and threshold enforcement
+- `pnpm test:e2e`
+  - starts a temporary `local_trusted/private` app instance, seeds data through the public API, and runs the Playwright board-flow gate
+
+Coverage reports are written per project under `coverage/`.
+
+Before hand-off, run:
+
+```sh
+pnpm -r typecheck
+pnpm test:coverage
+pnpm test:e2e
+pnpm build
+```
+
+If you only need a faster local loop while iterating on code, use `pnpm test:unit` and reserve `pnpm test:coverage` plus `pnpm test:e2e` for the final verification pass.
+
 ## Reset Local Dev Database
 
 To wipe local dev data and start fresh:
