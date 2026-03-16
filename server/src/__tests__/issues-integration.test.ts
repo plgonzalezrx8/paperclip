@@ -102,6 +102,17 @@ describe.sequential("issue workflow integration", () => {
       ]),
     );
 
+    const outOfRangePage = await harness.board.get(
+      `/companies/${company.id as string}/issues/page?page=999`,
+    );
+    expect(outOfRangePage.status).toBe(200);
+    expect(outOfRangePage.body).toMatchObject({
+      items: [],
+      page: 999,
+      total: 1,
+      totalPages: 1,
+    });
+
     const checkedOut = await harness.asAgent(assigneeKey.token as string, checkoutRun.id as string)
       .post(`/issues/${createdIssue.id as string}/checkout`)
       .send({

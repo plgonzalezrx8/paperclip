@@ -341,4 +341,41 @@ describe("Issues page", () => {
     expect(container.textContent).toContain("No issues match the current filters.");
     expect(container.textContent).toContain("Create Issue");
   });
+
+  it("recovers invalid out-of-range URLs back to the last valid page", async () => {
+    listPageMock.mockImplementation(async (_companyId: string, filters: { page?: number } = {}) => {
+      if ((filters.page ?? 1) > 4) {
+        return createIssuePageResult({
+          items: [],
+          page: filters.page ?? 1,
+          total: 80,
+          totalPages: 4,
+        });
+      }
+
+      return createIssuePageResult({
+        page: filters.page ?? 1,
+        total: 80,
+        totalPages: 4,
+      });
+    });
+
+    const rendered = await renderIssues("/BLU/issues?page=6");
+    root = rendered.root;
+    container = rendered.container;
+    await waitForCondition(
+      () => (container?.querySelector('[data-testid="location-search"]')?.textContent ?? "").includes("page=4"),
+      "out-of-range issue page recovery to reach the URL",
+    );
+
+    expect(listPageMock).toHaveBeenCalledWith(
+      "company-1",
+      expect.objectContaining({ page: 6 }),
+    );
+    expect(listPageMock).toHaveBeenLastCalledWith(
+      "company-1",
+      expect.objectContaining({ page: 4 }),
+    );
+    expect(container.textContent).not.toContain("No issues match the current filters.");
+  });
 });

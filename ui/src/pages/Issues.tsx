@@ -230,6 +230,12 @@ export function Issues() {
     enabled: !!selectedCompanyId,
   });
 
+  const isRecoveringOutOfRangePage =
+    !!issuesPageQuery.data &&
+    issuesPageQuery.data.total > 0 &&
+    issuesPageQuery.data.items.length === 0 &&
+    issuesPageQuery.data.page > issuesPageQuery.data.totalPages;
+
   const updateIssue = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => issuesApi.update(id, data),
     onSuccess: async (_issue, variables) => {
@@ -250,6 +256,17 @@ export function Issues() {
     );
     setSearchParams(next, { replace: true });
   }, [issuesPageQuery.data, page, searchParamString, setSearchParams]);
+
+  useEffect(() => {
+    if (!isRecoveringOutOfRangePage || !issuesPageQuery.data) return;
+    // Keep operators on a valid page after the API reports an empty,
+    // out-of-range result without mutating the server-side pagination contract.
+    const next = buildNextSearchParams(
+      searchParamString,
+      { page: issuesPageQuery.data.totalPages > 1 ? String(issuesPageQuery.data.totalPages) : null },
+    );
+    setSearchParams(next, { replace: true });
+  }, [isRecoveringOutOfRangePage, issuesPageQuery.data, searchParamString, setSearchParams]);
 
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
   const agentNames = useMemo(
@@ -273,6 +290,7 @@ export function Issues() {
     const pageData = issuesPageQuery.data;
     if (!pageData) return null;
     if (pageData.total === 0) return "0 issues";
+    if (pageData.items.length === 0) return `Showing 0 of ${pageData.total} issues`;
     const start = (pageData.page - 1) * pageData.pageSize + 1;
     const end = start + pageData.items.length - 1;
     return `Showing ${start}-${end} of ${pageData.total} issues`;
@@ -478,7 +496,7 @@ export function Issues() {
       {issuesPageQuery.isLoading ? <PageSkeleton variant="issues-list" /> : null}
       {issuesPageQuery.error ? <p className="text-sm text-destructive">{issuesPageQuery.error.message}</p> : null}
 
-      {!issuesPageQuery.isLoading && !issuesPageQuery.error && issuesPageQuery.data?.items.length === 0 ? (
+      {!issuesPageQuery.isLoading && !issuesPageQuery.error && !isRecoveringOutOfRangePage && issuesPageQuery.data?.items.length === 0 ? (
         <EmptyState
           icon={CircleDot}
           message={emptyMessage}
@@ -565,7 +583,7 @@ export function Issues() {
         </div>
       ) : null}
 
-      {!issuesPageQuery.isLoading && !issuesPageQuery.error && issuesPageQuery.data && issuesPageQuery.data.total > 0 ? (
+      {!issuesPageQuery.isLoading && !issuesPageQuery.error && !isRecoveringOutOfRangePage && issuesPageQuery.data && issuesPageQuery.data.total > 0 ? (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-muted-foreground">
             {resultsLabel}

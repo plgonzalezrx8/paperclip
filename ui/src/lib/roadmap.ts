@@ -1,6 +1,10 @@
 import type { Goal, GoalPlanningHorizon, GoalStatus } from "@paperclipai/shared";
 
 export type RoadmapLaneId = GoalPlanningHorizon | "done" | "archived";
+export type RoadmapLanePatch = {
+  planningHorizon?: GoalPlanningHorizon;
+  status?: GoalStatus;
+};
 
 export const ROADMAP_LANES: Array<{
   id: RoadmapLaneId;
@@ -60,10 +64,7 @@ export function getRoadmapLaneLabel(lane: RoadmapLaneId): string {
 export function buildRoadmapLanePatch(
   goal: Pick<Goal, "planningHorizon" | "status">,
   lane: RoadmapLaneId
-): {
-  planningHorizon?: GoalPlanningHorizon;
-  status: GoalStatus;
-} {
+): RoadmapLanePatch {
   if (lane === "done") {
     return { status: "achieved" };
   }
@@ -72,14 +73,17 @@ export function buildRoadmapLanePatch(
     return { status: "cancelled" };
   }
 
-  // Moving a terminal roadmap item back into a planning lane should reopen it,
-  // but we preserve the current non-terminal status when the operator is only
-  // changing the horizon.
+  // Avoid replaying stale non-terminal statuses when the operator only moves a
+  // roadmap item between planning lanes; explicit status writes are reserved
+  // for transitions into or out of terminal lanes.
+  if (goal.status === "achieved" || goal.status === "cancelled") {
+    return {
+      planningHorizon: lane,
+      status: "planned",
+    };
+  }
+
   return {
     planningHorizon: lane,
-    status:
-      goal.status === "achieved" || goal.status === "cancelled"
-        ? "planned"
-        : goal.status,
   };
 }

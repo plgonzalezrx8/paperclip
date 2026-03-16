@@ -781,7 +781,21 @@ export function issueService(db: Db) {
         .where(and(...conditions));
       const total = Number(countRow?.count ?? 0);
       const totalPages = total === 0 ? 1 : Math.ceil(total / normalized.pageSize);
-      const page = Math.min(normalized.page, totalPages);
+      const page = normalized.page;
+      const isOutOfRangePage = total > 0 && page > totalPages;
+      if (total === 0 || isOutOfRangePage) {
+        // Echo the requested page number so machine consumers can stop paging on
+        // `items.length === 0`, while the UI remains free to recover to the
+        // last valid page client-side for human operators.
+        return {
+          items: [],
+          page,
+          pageSize: normalized.pageSize,
+          total,
+          totalPages,
+        };
+      }
+
       const rows = await db
         .select()
         .from(issues)

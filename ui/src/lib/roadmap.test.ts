@@ -27,6 +27,37 @@ describe("roadmap lane helpers", () => {
     });
   });
 
+  it("omits stale status when moving between planning lanes", () => {
+    expect(
+      buildRoadmapLanePatch(
+        { planningHorizon: "now", status: "active" },
+        "next"
+      )
+    ).toEqual({
+      planningHorizon: "next",
+    });
+  });
+
+  it("sends explicit terminal statuses only when the lane transition requires it", () => {
+    expect(
+      buildRoadmapLanePatch(
+        { planningHorizon: "now", status: "active" },
+        "done"
+      )
+    ).toEqual({
+      status: "achieved",
+    });
+
+    expect(
+      buildRoadmapLanePatch(
+        { planningHorizon: "later", status: "active" },
+        "archived"
+      )
+    ).toEqual({
+      status: "cancelled",
+    });
+  });
+
   it("keeps user-facing roadmap labels aligned with board language", () => {
     expect(getGoalStatusLabel("achieved")).toBe("done");
     expect(getGoalStatusLabel("cancelled")).toBe("archived");

@@ -12,6 +12,7 @@ import {
   getRoadmapLane,
   getRoadmapLaneLabel,
   ROADMAP_LANES,
+  type RoadmapLanePatch,
   type RoadmapLaneId,
 } from "../lib/roadmap";
 import { cn } from "../lib/utils";
@@ -19,7 +20,7 @@ import { cn } from "../lib/utils";
 interface RoadmapLaneMenuProps {
   goal: Pick<Goal, "planningHorizon" | "status">;
   disabled?: boolean;
-  onMove: (patch: ReturnType<typeof buildRoadmapLanePatch>) => void;
+  onMove: (patch: RoadmapLanePatch) => void;
   triggerLabel?: string;
   align?: "start" | "center" | "end";
   compact?: boolean;
