@@ -23,6 +23,29 @@
 
 <br/>
 
+## What it looks like
+
+<p align="center">
+  <img src="doc/assets/screenshots/dashboard.png" alt="Paperclip dashboard" width="800" /><br/>
+  <sub>Company dashboard</sub>
+</p>
+
+<p align="center">
+  <img src="doc/assets/screenshots/issues.png" alt="Issues view" width="800" /><br/>
+  <sub>Issue queue and board</sub>
+</p>
+
+<div align="center">
+  <table>
+    <tr>
+      <td><img src="doc/assets/screenshots/agents.png" alt="Agents" width="780" /><br/><sub>Agent list and status</sub></td>
+      <td><img src="doc/assets/screenshots/org-chart.png" alt="Org chart" width="780" /><br/><sub>Org chart overview</sub></td>
+    </tr>
+  </table>
+</div>
+
+<br/>
+
 ## What is Paperclip?
 
 # Open-source orchestration for zero-human companies

@@ -335,14 +335,14 @@ export function GoalDetail() {
           value={goal.title}
           onSave={(title) => updateGoal.mutate({ title })}
           as="h2"
-          className="text-xl font-bold"
+          className="paperclip-work-title"
         />
 
         <InlineEditor
           value={goal.description ?? ""}
           onSave={(description) => updateGoal.mutate({ description })}
           as="p"
-          className="text-sm text-muted-foreground"
+          className="max-w-3xl text-sm text-muted-foreground"
           placeholder="Add a description..."
           multiline
           imageUploadHandler={async (file) => {
@@ -351,8 +351,8 @@ export function GoalDetail() {
           }}
         />
 
-        <div className="space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <div className="paperclip-work-card max-w-3xl space-y-2 rounded-[calc(var(--radius)+0.35rem)] px-4 py-4">
+          <p className="paperclip-work-kicker">
             Manager guidance
           </p>
           <InlineEditor
@@ -448,9 +448,11 @@ export function GoalDetail() {
 
         <TabsContent value="projects" className="mt-4">
           {linkedProjects.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No linked projects.</p>
+            <div className="paperclip-work-card rounded-[calc(var(--radius)+0.3rem)] px-4 py-3 text-sm text-muted-foreground">
+              No linked projects.
+            </div>
           ) : (
-            <div className="border border-border">
+            <div className="paperclip-work-list">
               {linkedProjects.map((project) => (
                 <EntityRow
                   key={project.id}

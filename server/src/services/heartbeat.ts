@@ -28,7 +28,12 @@ import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } fr
 import { secretService } from "./secrets.js";
 import { resolveDefaultAgentCheckoutDir, resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
 import { summarizeHeartbeatRunResultJson } from "./heartbeat-run-summary.js";
-import { parseStructuredStdoutLine, stderrChunkToRunEvents } from "./run-transcript-events.js";
+import {
+  consumeChunkLines,
+  flushChunkRemainder,
+  parseStructuredStdoutLine,
+  stderrLinesToRunEvents,
+} from "./run-transcript-events.js";
 
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
@@ -1723,6 +1728,7 @@ export function heartbeatService(db: Db) {
     let stdoutExcerpt = "";
     let stderrExcerpt = "";
     let stdoutStructuredBuffer = "";
+    let stderrStructuredBuffer = "";
 
     try {
       const startedAt = run.startedAt ?? new Date();
@@ -1781,12 +1787,9 @@ export function heartbeatService(db: Db) {
         .where(eq(heartbeatRuns.id, runId));
 
       const appendStructuredStdoutEvents = async (chunk: string, ts: string) => {
-        const combined = stdoutStructuredBuffer + chunk;
-        const lines = combined.split(/\r?\n/);
-        stdoutStructuredBuffer = lines.pop() ?? "";
-        for (const rawLine of lines) {
-          const line = rawLine.trim();
-          if (!line) continue;
+        const parsed = consumeChunkLines(chunk, stdoutStructuredBuffer);
+        stdoutStructuredBuffer = parsed.remainder;
+        for (const line of parsed.lines) {
           for (const event of parseStructuredStdoutLine(agent.adapterType, line, ts)) {
             await appendRunEvent(currentRun, seq++, event);
           }
@@ -1794,10 +1797,27 @@ export function heartbeatService(db: Db) {
       };
 
       const flushStructuredStdoutEvents = async (ts: string) => {
-        const trailing = stdoutStructuredBuffer.trim();
+        const trailing = flushChunkRemainder(stdoutStructuredBuffer);
         stdoutStructuredBuffer = "";
-        if (!trailing) return;
-        for (const event of parseStructuredStdoutLine(agent.adapterType, trailing, ts)) {
+        for (const line of trailing) {
+          for (const event of parseStructuredStdoutLine(agent.adapterType, line, ts)) {
+            await appendRunEvent(currentRun, seq++, event);
+          }
+        }
+      };
+
+      const appendStructuredStderrEvents = async (chunk: string) => {
+        const parsed = consumeChunkLines(chunk, stderrStructuredBuffer);
+        stderrStructuredBuffer = parsed.remainder;
+        for (const event of stderrLinesToRunEvents(parsed.lines)) {
+          await appendRunEvent(currentRun, seq++, event);
+        }
+      };
+
+      const flushStructuredStderrEvents = async () => {
+        const trailing = flushChunkRemainder(stderrStructuredBuffer);
+        stderrStructuredBuffer = "";
+        for (const event of stderrLinesToRunEvents(trailing)) {
           await appendRunEvent(currentRun, seq++, event);
         }
       };
@@ -1837,9 +1857,7 @@ export function heartbeatService(db: Db) {
           return;
         }
 
-        for (const event of stderrChunkToRunEvents(chunk)) {
-          await appendRunEvent(currentRun, seq++, event);
-        }
+        await appendStructuredStderrEvents(chunk);
       };
       for (const warning of runtimeWorkspaceWarnings) {
         // Workspace fallbacks are useful operator context, but they are not execution errors.
@@ -1895,6 +1913,7 @@ export function heartbeatService(db: Db) {
         authToken: authToken ?? undefined,
       });
       await flushStructuredStdoutEvents(new Date().toISOString());
+      await flushStructuredStderrEvents();
       const nextSessionState = resolveNextSessionState({
         codec: sessionCodec,
         adapterResult,
@@ -2027,6 +2046,17 @@ export function heartbeatService(db: Db) {
           logger.warn({ err: parseErr, runId }, "failed to flush structured stdout events after adapter failure");
         } finally {
           stdoutStructuredBuffer = "";
+        }
+      }
+      if (stderrStructuredBuffer.trim()) {
+        try {
+          for (const event of stderrLinesToRunEvents([stderrStructuredBuffer.trim()])) {
+            await appendRunEvent(run, seq++, event);
+          }
+        } catch (parseErr) {
+          logger.warn({ err: parseErr, runId }, "failed to flush structured stderr events after adapter failure");
+        } finally {
+          stderrStructuredBuffer = "";
         }
       }
 
