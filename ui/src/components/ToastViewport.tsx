@@ -67,7 +67,7 @@ function AnimatedToast({
           onClick={() => onDismiss(toast.id)}
           className="mt-0.5 shrink-0 rounded p-1 opacity-50 hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
         >
-          <X className="h-3.5 w-3.5" />
+          <X className="size-3.5" />
         </button>
       </div>
     </li>
@@ -83,7 +83,7 @@ export function ToastViewport() {
     <aside
       aria-live="polite"
       aria-atomic="false"
-      className="pointer-events-none fixed bottom-3 left-3 z-[120] w-full max-w-sm px-1"
+      className="pointer-events-none fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-3 z-[120] w-full max-w-sm px-1 md:bottom-3"
     >
       <ol className="flex w-full flex-col-reverse gap-2">
         {toasts.map((toast) => (
